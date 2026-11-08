@@ -486,6 +486,16 @@ const server = http.createServer((req, res) => {
     else res.end();
   });
 });
+// ── 서버 깨워 두기 (Render 무료 요금제는 15분 동안 접속이 없으면 잠듦) ─────
+// 10분마다 자기 공개 주소(/healthz)를 한 번 불러서 잠들지 않게 합니다. KEEP_AWAKE=0 이면 끔.
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || process.env.SELF_URL || '';
+if (SELF_URL && process.env.KEEP_AWAKE !== '0') {
+  setInterval(() => {
+    fetch(`${SELF_URL.replace(/\/$/, '')}/healthz`, { signal: AbortSignal.timeout(20 * 1000) })
+      .catch((e) => console.warn('깨우기 실패:', e.message));
+  }, 10 * 60 * 1000).unref();
+}
+
 server.listen(PORT, () => {
   console.log(`Yeollin calendar v2 running on :${PORT}`);
   if (!NOTION_API_KEY) console.warn('⚠ NOTION_API_KEY 환경변수가 없습니다.');

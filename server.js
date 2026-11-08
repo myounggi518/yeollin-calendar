@@ -19,6 +19,9 @@ const NOTION_VERSION = '2025-09-03';
 const TITLE_PROP = '일정명 / Tasks';
 const DATE_PROP = '날짜';
 const CATEGORY_PROP = '업무속성'; // 일정 색 구분 기준 (노션 선택지 색을 그대로 사용)
+const WORKERS_PROP = '근무자';
+const PERSONAL_OFF_PROP = '개인휴무';
+const { buildRoster, rosterMonthAllowed, ROSTER_START_MONTH } = require('./roster');
 
 const SERVER_CACHE_MS = Number(process.env.SERVER_CACHE_MS ?? 60 * 1000); // 같은 데이터를 1분 동안 여러 직원이 공유 → Notion 호출 절약
 const STALE_MAX_MS = 24 * 60 * 60 * 1000;   // Notion 장애 시 최대 24시간 전 데이터까지 대신 제공
@@ -30,6 +33,7 @@ const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const AUTH_ENABLED = CALENDAR_PASSWORD.length > 0;
 
 const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
+const ROSTER_HTML = fs.readFileSync(path.join(__dirname, 'public', 'roster.html'));
 
 // ── 공통 도구 ───────────────────────────────────────────────────────
 class AppError extends Error { constructor(code) { super(code); this.code = code; } }
@@ -176,6 +180,18 @@ function readCategory(prop) {
   return { name: String(opt.name).slice(0, 40), color: NOTION_COLORS.has(opt.color) ? opt.color : 'default' };
 }
 
+// 근무자(다중선택/선택/글자) → 한 줄 글자. 근무배치표 이름 찾기에 사용
+function readText(prop) {
+  if (!prop) return '';
+  if (Array.isArray(prop.multi_select)) return prop.multi_select.map((o) => o.name).join(' ');
+  if (prop.select) return prop.select.name || '';
+  if (prop.status) return prop.status.name || '';
+  if (Array.isArray(prop.rich_text)) return prop.rich_text.map((x) => x.plain_text).join('');
+  if (Array.isArray(prop.title)) return prop.title.map((x) => x.plain_text).join('');
+  return '';
+}
+
+// w = { from, until(미포함), queryFrom } 범위와 겹치는 일정 (근무자·개인휴무 포함)
 async function loadFromNotion(w) {
   const filter = { and: [
     { property: DATE_PROP, date: { on_or_after: w.queryFrom } },
@@ -202,25 +218,51 @@ async function loadFromNotion(w) {
     if (startDate >= w.until || endDate < w.from) continue;  // 3개월 범위와 겹치는 일정만
     const title = ((p.properties[TITLE_PROP] && p.properties[TITLE_PROP].title) || [])
       .map((x) => x.plain_text).join('').trim() || '제목 없음';
-    events.push({ id: p.id, title, startDate, endDate: endDate < startDate ? startDate : endDate, time: toKstTime(d.start), url: p.url, category: readCategory(p.properties[CATEGORY_PROP]) });
+    events.push({
+      id: p.id, title, startDate, endDate: endDate < startDate ? startDate : endDate, time: toKstTime(d.start), url: p.url,
+      category: readCategory(p.properties[CATEGORY_PROP]),
+      workers: readText(p.properties[WORKERS_PROP]),
+      personalOff: readText(p.properties[PERSONAL_OFF_PROP]),
+    });
   }
   events.sort((a, b) => (a.startDate.localeCompare(b.startDate)) || (a.time.localeCompare(b.time)) || a.title.localeCompare(b.title, 'ko'));
   return { events, range: { from: w.from, until: w.until }, fetchedAt: new Date().toISOString() };
 }
 
-// 서버 캐시 + 동시 요청 묶기: 여러 직원이 동시에 열어도 Notion 조회는 한 번만 나갑니다.
-let cache = null;      // { key, data, at }
-let inflight = null;   // { key, promise }
+// 서버 캐시 + 동시 요청 묶기: 여러 직원이 동시에 열어도 같은 범위의 Notion 조회는 한 번만 나갑니다.
+const cacheStore = new Map();   // key → { data, at }
+const inflightStore = new Map(); // key → promise
+async function cached(key, loader) {
+  const c = cacheStore.get(key);
+  if (c && Date.now() - c.at < SERVER_CACHE_MS) return c.data;
+  if (inflightStore.has(key)) return inflightStore.get(key);
+  const promise = loader()
+    .then((data) => { cacheStore.set(key, { data, at: Date.now() }); return data; })
+    .finally(() => inflightStore.delete(key));
+  inflightStore.set(key, promise);
+  return promise;
+}
+function staleFor(key) {
+  const c = cacheStore.get(key);
+  return c && Date.now() - c.at < STALE_MAX_MS ? c.data : null;
+}
+setInterval(() => { const now = Date.now(); for (const [k, c] of cacheStore) if (now - c.at > STALE_MAX_MS) cacheStore.delete(k); }, 60 * 60 * 1000).unref();
+
+// 달력용: 근무자 등 달력에 필요 없는 칸은 빼고 보냄
 async function getEvents() {
   const w = kstWindow();
-  const key = w.from;
-  if (cache && cache.key === key && Date.now() - cache.at < SERVER_CACHE_MS) return cache.data;
-  if (inflight && inflight.key === key) return inflight.promise;
-  const promise = loadFromNotion(w)
-    .then((data) => { cache = { key, data, at: Date.now() }; return data; })
-    .finally(() => { if (inflight && inflight.promise === promise) inflight = null; });
-  inflight = { key, promise };
-  return promise;
+  const key = `cal:${w.from}`;
+  return cached(key, async () => {
+    const d = await loadFromNotion(w);
+    return { ...d, events: d.events.map(({ workers, personalOff, ...e }) => e) };
+  });
+}
+
+// 근무배치표용: 한 달 (그 달에 걸친 여러 날 일정 포함)
+async function getRoster(month) {
+  const [y, m] = month.split('-').map(Number);
+  const w = { from: ymd(y, m - 1), until: ymd(y, m), queryFrom: ymd(y, m - 3) };
+  return cached(`roster:${month}`, async () => buildRoster(month, await loadFromNotion(w)));
 }
 
 // ── 요청 처리 ───────────────────────────────────────────────────────
@@ -253,19 +295,33 @@ async function handle(req, res) {
     return sendJson(res, 200, issueToken());
   }
 
-  if (req.method === 'GET' && url.pathname === '/api/events') {
+  if (req.method === 'GET' && ['/roster', '/roster.html'].includes(url.pathname)) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(ROSTER_HTML);
+  }
+
+  const isEvents = url.pathname === '/api/events', isRoster = url.pathname === '/api/roster';
+  if (req.method === 'GET' && (isEvents || isRoster)) {
     if (limited(`events:${ip}`, 60, 60 * 1000)) return sendError(res, 'TOO_MANY');
     if (!NOTION_API_KEY) return sendError(res, 'NOT_CONFIGURED');
     if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
+    let key, load;
+    if (isEvents) {
+      key = `cal:${kstWindow().from}`; load = getEvents;
+    } else {
+      const month = String(url.searchParams.get('month') || '');
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return sendError(res, 'BAD_REQUEST');
+      if (!rosterMonthAllowed(month, Date.now())) return sendJson(res, 400, { error: `근무배치표는 ${ROSTER_START_MONTH}부터 1년 뒤까지 볼 수 있습니다.`, code: 'MONTH_OUT_OF_RANGE' });
+      key = `roster:${month}`; load = () => getRoster(month);
+    }
     try {
-      return sendJson(res, 200, await getEvents());
+      return sendJson(res, 200, await load());
     } catch (e) {
       const code = e instanceof AppError ? e.code : 'NOTION_ERROR';
       if (!(e instanceof AppError)) console.error('Unexpected:', e);
       // Notion 장애 때는 직전 데이터를 "이전 데이터" 표시와 함께 제공 (화면이 비지 않도록)
-      if (cache && cache.key === kstWindow().from && Date.now() - cache.at < STALE_MAX_MS) {
-        return sendJson(res, 200, { ...cache.data, stale: true, warning: code, warningMessage: (ERRORS[code] || ERRORS.NOTION_ERROR)[1] });
-      }
+      const stale = staleFor(key);
+      if (stale) return sendJson(res, 200, { ...stale, stale: true, warning: code, warningMessage: (ERRORS[code] || ERRORS.NOTION_ERROR)[1] });
       return sendError(res, code);
     }
   }

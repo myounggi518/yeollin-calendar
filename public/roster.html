@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="format-detection" content="telephone=no">
+<title>열린기획 월간 근무배치표</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#15243b;background:#f4f7fb;-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+main{max-width:1600px;margin:auto}
+h1{font-size:clamp(18px,4vw,26px);margin:0 0 4px}
+.sub{font-size:12px;color:#5e6a7e;margin:0 0 12px}
+button{font:inherit;background:#fff;color:#15243b;border:1px solid #ccd5e0;border-radius:9px;padding:9px 12px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button:disabled{opacity:.35;cursor:default}
+button:focus-visible,a:focus-visible{outline:3px solid #478ce1;outline-offset:1px}
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.grow{flex:1}
+.month{font-weight:750;min-width:115px;text-align:center}
+#status{font-size:12px;color:#5e6a7e;min-height:18px;margin-bottom:8px}
+#status.warn{color:#9a5b00}#status.error{color:#b42318}
+#legend{display:flex;flex-wrap:wrap;gap:4px 6px;margin:0 0 8px;font-size:12px}
+#legend span{padding:2px 7px;border-radius:99px;white-space:nowrap}
+
+/* 표: 가로 스크롤 + 이름 칸·날짜 줄 고정 */
+.wrap{overflow:auto;max-height:calc(100vh - 150px);background:#fff;border:1px solid #dbe1e9;border-radius:10px;-webkit-overflow-scrolling:touch}
+table{border-collapse:separate;border-spacing:0;font-size:12px;min-width:100%}
+th,td{border-right:1px solid #e6eaf0;border-bottom:1px solid #e6eaf0;padding:4px;vertical-align:top;background:#fff}
+thead th{position:sticky;top:0;z-index:2;background:#f7f9fc;text-align:center;font-weight:700;white-space:nowrap;padding:6px 4px}
+thead th small{display:block;font-weight:500;color:#6b7686}
+th.sat,td.sat{background:#f6f9ff}th.sun,td.sun{background:#fff7f7}
+thead th.sat small,thead th.sat{color:#316abc}thead th.sun small,thead th.sun{color:#d64949}
+th.today{background:#225bc8!important;color:#fff!important}th.today small{color:#dfe8ff!important}
+td.today{box-shadow:inset 2px 0 0 #225bc8,inset -2px 0 0 #225bc8}
+.name{position:sticky;left:0;z-index:1;background:#f7f9fc;font-weight:700;white-space:nowrap;min-width:64px;text-align:left}
+thead .name{z-index:3}
+tr.ev td,tr.ev .name{background:#fbfcfe}
+tr.ev .name{color:#59677d}
+tr.sep td,tr.sep th{padding:0;height:4px;background:#dbe1e9;border:0}
+td.d{min-width:96px;max-width:130px}
+td.sum{text-align:center;font-weight:700;white-space:nowrap;min-width:42px;vertical-align:middle}
+th.sum{min-width:42px}
+.chip{display:block;padding:2px 4px;margin:0 0 2px;border-radius:4px;line-height:1.25;overflow-wrap:anywhere;word-break:keep-all;text-decoration:none;color:inherit}
+.off{display:block;padding:2px 4px;border-radius:4px;background:#fde2e1;color:#b42318;font-weight:700;text-align:center;margin:0 0 2px}
+/* 업무속성 색 (달력과 같음) */
+.c-none{background:#fff;color:#4b5563;box-shadow:inset 0 0 0 1px #d6dbe3}
+.c-default,.c-gray{background:#ececea;color:#46443f}
+.c-brown{background:#f1e7e1;color:#7d4a33}
+.c-orange{background:#fbe4cf;color:#9a4210}
+.c-yellow{background:#f9edc4;color:#755a00}
+.c-green{background:#dcefdf;color:#2b6a3c}
+.c-blue{background:#dcecf7;color:#1f5f8f}
+.c-purple{background:#ece3f6;color:#64409a}
+.c-pink{background:#f8e1ec;color:#9b2f67}
+.c-red{background:#fbdcdc;color:#a8231d}
+.hint{font-size:12px;color:#657185;margin:10px 0}
+@media(max-width:600px){
+  body{padding:8px;padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
+  table{font-size:11px}
+  td.d{min-width:84px}
+  .name{min-width:52px}
+  .bar{gap:4px}.bar button{padding:7px 9px}.month{min-width:86px}
+  .wrap{max-height:calc(100vh - 140px)}
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>📋 열린기획 월간 근무배치표</h1>
+  <p class="sub">보기 전용 · 월간일정표에서 자동 생성</p>
+  <div class="bar">
+    <button id="prev" type="button" aria-label="이전 달">‹</button>
+    <div class="month" id="month" aria-live="polite"></div>
+    <button id="next" type="button" aria-label="다음 달">›</button>
+    <span class="grow"></span>
+    <button id="current" type="button">이번 달</button>
+    <button id="refresh" type="button">새로고침</button>
+  </div>
+  <div id="status" role="status"></div>
+  <div id="legend" aria-label="업무속성 색 안내"></div>
+  <div class="wrap" id="wrap"><table id="tbl"></table></div>
+  <p class="hint">노션 「월간일정표」의 일정·근무자·휴무로 자동으로 만들어집니다. 수정은 노션 월간일정표에서 해주세요.<br>
+  표를 좌우로 밀어서 날짜를 볼 수 있습니다. 화면을 열어두면 5분마다 최신 내용을 확인합니다.</p>
+</main>
+<script>
+(() => {
+  'use strict';
+  const START = '2026-11';
+  const POLL_MS = window.YEOLLIN_POLL_MS || 5 * 60 * 1000;
+  const RESUME_MS = 60 * 1000;
+  const KST = 9 * 60 * 60 * 1000;
+  const $ = (id) => document.getElementById(id);
+  const mem = {};
+  const store = {
+    get(k) { try { const v = localStorage.getItem(k); if (v != null) return v; } catch {} return mem[k] ?? null; },
+    set(k, v) { mem[k] = v; try { localStorage.setItem(k, v); } catch {} },
+  };
+  const cacheKey = (m) => 'yeollin-roster-v1:' + m;
+
+  const kstNow = () => new Date(Date.now() + KST);
+  const curMonth = () => kstNow().toISOString().slice(0, 7);
+  const todayKey = () => kstNow().toISOString().slice(0, 10);
+  const idx = (m) => { const [y, mm] = m.split('-').map(Number); return y * 12 + mm - 1; };
+  const fromIdx = (i) => `${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`;
+  const minIdx = () => idx(START), maxIdx = () => idx(curMonth()) + 12;
+  const clampMonth = (m) => fromIdx(Math.min(maxIdx(), Math.max(minIdx(), idx(m))));
+
+  const qs = new URLSearchParams(location.search).get('month');
+  let month = clampMonth(/^\d{4}-\d{2}$/.test(qs || '') ? qs : curMonth());
+  let data = null, inflight = null, lastAttempt = 0, lastError = null, scrolledFor = null;
+
+  function loadCache() {
+    try { const c = JSON.parse(store.get(cacheKey(month)) || 'null'); data = c && c.month === month ? c : null; } catch { data = null; }
+  }
+
+  const timeText = (iso) => { try { return new Date(iso).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Seoul' }); } catch { return ''; } };
+  const dtText = (iso) => { try { return new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Seoul' }); } catch { return ''; } };
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+
+  function chipEl(c) {
+    const a = el(c.url && /^https:\/\//.test(c.url) ? 'a' : 'span', 'chip c-' + (c.color || 'none'), c.title);
+    if (a.tagName === 'A') { a.href = c.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    a.title = c.title;
+    return a;
+  }
+
+  function render() {
+    const i = idx(month);
+    $('prev').disabled = i <= minIdx();
+    $('next').disabled = i >= maxIdx();
+    $('current').disabled = month === clampMonth(curMonth());
+    const [y, m] = month.split('-').map(Number);
+    $('month').textContent = `${y}년 ${m}월`;
+    const tbl = $('tbl');
+    if (!data) { tbl.replaceChildren(); renderLegend(); return; }
+
+    const today = todayKey();
+    const dayCls = (d) => { const w = new Date(d + 'T00:00:00Z').getUTCDay(); return (w === 6 ? 'sat' : w === 0 ? 'sun' : '') + (d === today ? ' today' : ''); };
+
+    const thead = el('thead'), hr = el('tr');
+    hr.append(el('th', 'name', '구분'));
+    for (const d of data.days) {
+      const th = el('th', dayCls(d), String(Number(d.slice(8))) + '일');
+      th.append(el('small', '', DOW[new Date(d + 'T00:00:00Z').getUTCDay()]));
+      th.dataset.day = d;
+      hr.append(th);
+    }
+    hr.append(el('th', 'sum', '근무'), el('th', 'sum', '휴무'));
+    thead.append(hr);
+
+    const tbody = el('tbody');
+    // 행사 줄
+    const ev = el('tr', 'ev');
+    ev.append(el('th', 'name', '행사'));
+    for (const d of data.days) {
+      const td = el('td', 'd ' + dayCls(d));
+      for (const c of data.events[d] || []) td.append(chipEl(c));
+      if (!(data.events[d] || []).length && (data.offNotes[d] || []).some((t) => /전체휴무|전직원휴무|전원휴무/.test(t))) td.append(el('span', 'off', '전체휴무'));
+      ev.append(td);
+    }
+    ev.append(el('td', 'sum', ''), el('td', 'sum', ''));
+    tbody.append(ev);
+    const sep = el('tr', 'sep'); sep.append(el('th', 'name')); for (let k = 0; k < data.days.length + 2; k++) sep.append(el('td')); tbody.append(sep);
+
+    // 직원 줄
+    for (const s of data.staff) {
+      const tr = el('tr');
+      tr.append(el('th', 'name', s.name));
+      for (const d of data.days) {
+        const td = el('td', 'd ' + dayCls(d));
+        const c = s.cells[d];
+        if (c) {
+          if (c.off) td.append(el('span', 'off', '휴무'));
+          for (const w of c.work) td.append(chipEl(w));
+        }
+        tr.append(td);
+      }
+      tr.append(el('td', 'sum', String(s.workDays)), el('td', 'sum', String(s.offDays)));
+      tbody.append(tr);
+    }
+    tbl.replaceChildren(thead, tbody);
+    renderLegend();
+
+    // 이번 달이면 오늘 날짜가 보이도록 처음 한 번만 스크롤
+    if (scrolledFor !== month) {
+      scrolledFor = month;
+      const th = tbl.querySelector('th.today');
+      const wrap = $('wrap');
+      wrap.scrollLeft = th ? Math.max(0, th.offsetLeft - tbl.querySelector('thead .name').offsetWidth - 8) : 0;
+    }
+  }
+
+  function renderLegend() {
+    const box = $('legend'); box.replaceChildren();
+    if (!data) return;
+    let none = false;
+    for (const d of data.days) for (const c of data.events[d] || []) if (!c.color) none = true;
+    for (const c of data.categories || []) box.append(el('span', 'c-' + c.color, c.name));
+    if (none) box.append(el('span', 'c-none', '미지정'));
+    box.append(el('span', 'off', '휴무'));
+  }
+
+  function showStatus(kind) {
+    const s = $('status'); s.className = '';
+    if (kind === 'loading') { s.textContent = data ? `최신 내용 확인 중… (${timeText(data.fetchedAt)} 기준 표시 중)` : '노션에서 근무배치를 불러오는 중…'; return; }
+    if (lastError) { s.className = data ? 'warn' : 'error'; s.textContent = data ? `⚠ ${lastError} · 저장된 내용(${dtText(data.fetchedAt)} 기준)을 표시 중입니다.` : lastError; return; }
+    if (!data) { s.textContent = ''; return; }
+    if (data.stale) { s.className = 'warn'; s.textContent = `⚠ ${data.warningMessage || '노션 연결이 원활하지 않습니다.'} · ${dtText(data.fetchedAt)} 기준입니다.`; return; }
+    s.textContent = `${timeText(data.fetchedAt)} 기준 · 직원 ${data.staff.length}명`;
+  }
+
+  function refresh() {
+    if (inflight) return inflight;
+    const want = month;
+    lastAttempt = Date.now();
+    showStatus('loading');
+    inflight = (async () => {
+      try {
+        let r;
+        try { r = await fetch('/api/roster?month=' + encodeURIComponent(want), { cache: 'no-store' }); }
+        catch { throw new Error(navigator.onLine === false ? '인터넷 연결이 끊겨 있습니다.' : '서버에 연결하지 못했습니다.'); }
+        let body = null; try { body = await r.json(); } catch {}
+        if (!r.ok || !body) throw new Error((body && body.error) || `서버 오류 (${r.status})`);
+        lastError = null;
+        if (want === month) {   // 응답을 기다리는 사이 다른 달로 넘어갔으면 화면에는 쓰지 않음
+          if (!body.stale || !data || Date.parse(body.fetchedAt) >= Date.parse(data.fetchedAt)) data = body;
+          render();
+        }
+        if (!body.stale) store.set(cacheKey(want), JSON.stringify(body));
+      } catch (e) {
+        if (want === month) lastError = e.message || '불러오지 못했습니다.';
+      } finally {
+        inflight = null;
+        showStatus();
+        if (want !== month) refresh();   // 기다리는 사이 달이 바뀌었으면 새 달을 이어서 조회
+      }
+    })();
+    return inflight;
+  }
+
+  function go(m) {
+    month = clampMonth(m);
+    try { const u = new URL(location.href); u.searchParams.set('month', month); history.replaceState(null, '', u); } catch {}
+    lastError = null;
+    loadCache(); render(); showStatus(); refresh();
+  }
+  $('prev').onclick = () => go(fromIdx(idx(month) - 1));
+  $('next').onclick = () => go(fromIdx(idx(month) + 1));
+  $('current').onclick = () => go(curMonth());
+  $('refresh').onclick = () => refresh();
+
+  const due = (ms) => document.visibilityState === 'visible' && Date.now() - lastAttempt >= ms;
+  setInterval(() => { if (due(POLL_MS)) refresh(); }, Math.min(30 * 1000, POLL_MS));
+  document.addEventListener('visibilitychange', () => { if (due(RESUME_MS)) refresh(); });
+  window.addEventListener('pageshow', (e) => { if (e.persisted && due(RESUME_MS)) refresh(); });
+  window.addEventListener('online', () => refresh());
+
+  loadCache(); render(); showStatus(); refresh();
+})();
+</script>
+</body>
+</html>

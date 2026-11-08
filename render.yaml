@@ -1,0 +1,21 @@
+# Render 자동 설정 (Blueprint). Render → New → Blueprint 에서 이 저장소를 고르면 아래대로 만들어집니다.
+services:
+  - type: web
+    name: yeollin-calendar
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NOTION_API_KEY        # 노션 통합 비밀키 — 배포 화면에서 직접 입력
+        sync: false
+      - key: CALENDAR_PASSWORD     # 직원용 달력 암호 — 배포 화면에서 직접 입력
+        sync: false
+      - key: TOKEN_SECRET          # 자동 생성
+        generateValue: true
+      - key: NOTION_DATA_SOURCE_ID
+        value: 272d2f7f-5131-8205-b193-87613435dcf2
+      - key: NODE_VERSION
+        value: "22"

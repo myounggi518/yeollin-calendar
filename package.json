@@ -1,0 +1,9 @@
+{
+  "name": "yeollin-calendar",
+  "version": "2.0.0",
+  "private": true,
+  "description": "열린기획 월간 일정표 — Notion 읽기 전용 외부 달력",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20" },
+  "dependencies": {}
+}

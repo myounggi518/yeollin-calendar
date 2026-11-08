@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="format-detection" content="telephone=no">
+<title>열린기획 월간 일정표</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#15243b;background:#f4f7fb;-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}
+body{margin:0;padding:16px;padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}
+main{max-width:1100px;margin:auto}
+h1{font-size:clamp(18px,4vw,26px);margin:0 0 4px}
+.sub{font-size:12px;color:#5e6a7e;margin:0 0 12px}
+button,input{font:inherit}
+button{background:#fff;color:#15243b;border:1px solid #ccd5e0;border-radius:9px;padding:9px 12px;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button:disabled{opacity:.35;cursor:default}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478ce1;outline-offset:1px}
+.bar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.grow{flex:1}
+.month{font-weight:750;min-width:115px;text-align:center}
+#status{font-size:12px;color:#5e6a7e;min-height:18px;margin-bottom:8px}
+#status.warn{color:#9a5b00}
+#status.error{color:#b42318}
+.calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
+.weekday{text-align:center;font-size:13px;font-weight:700;padding:8px 2px;color:#59677d}
+.weekday.sat{color:#316abc}.weekday.sun{color:#d64949}
+.day{min-width:0;min-height:104px;background:#fff;border:1px solid #e1e6ee;border-radius:9px;padding:6px;overflow:hidden}
+.day.other{opacity:.42}
+.num{font-size:13px;font-weight:700;margin-bottom:5px}
+.day.sat .num{color:#316abc}.day.sun .num{color:#d64949}
+.today .num{display:inline-block;background:#225bc8;color:#fff!important;border-radius:99px;padding:2px 6px}
+.event{display:block;padding:4px 5px;margin:3px 0;background:#e8f0fe;color:#1f4f9c;text-decoration:none;font-size:12px;line-height:1.3;white-space:normal;overflow-wrap:anywhere;word-break:keep-all;border-radius:5px}
+.event.multi{background:#fff1d6;color:#7a4b00}
+.event .t{font-weight:700;margin-right:2px}
+.event:hover{background:#d5e4ff}
+#gate{background:#fff;border:1px solid #dbe1e9;padding:14px;border-radius:12px;margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap}
+#gate input{min-width:150px;flex:1;padding:10px;border:1px solid #ccd5e0;border-radius:8px;font-size:16px} /* 16px 미만이면 아이폰이 화면을 확대함 */
+#gateMsg{flex-basis:100%;font-size:12px;color:#b42318;margin:0}
+.hint{font-size:12px;color:#657185;margin:10px 0}
+.hidden{display:none!important}
+@media(max-width:600px){
+  body{padding:8px;padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
+  .day{min-height:76px;padding:3px;border-radius:5px}
+  .calendar{gap:2px}
+  .num{font-size:11px;margin-bottom:2px}
+  .event{padding:2px 3px;margin:2px 0;font-size:10px;line-height:1.25;border-radius:3px}
+  .weekday{font-size:11px;padding:5px 1px}
+  .bar{gap:4px}
+  .bar button{padding:7px 9px}
+  .month{min-width:86px}
+  #status{font-size:11px}
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>📅 열린기획 월간 일정표</h1>
+  <p class="sub">보기 전용 · 자동 갱신</p>
+  <form id="gate" class="hidden" autocomplete="off">
+    <input type="password" id="password" placeholder="직원용 달력 암호" aria-label="달력 암호" enterkeyhint="go">
+    <button id="unlock" type="submit">일정 불러오기</button>
+    <p id="gateMsg" role="alert"></p>
+  </form>
+  <div class="bar">
+    <button id="prev" type="button" aria-label="이전 달">‹</button>
+    <div class="month" id="month" aria-live="polite"></div>
+    <button id="next" type="button" aria-label="다음 달">›</button>
+    <span class="grow"></span>
+    <button id="current" type="button">이번 달</button>
+    <button id="refresh" type="button">새로고침</button>
+  </div>
+  <div id="status" role="status"></div>
+  <div class="calendar" id="calendar"></div>
+  <p class="hint">일정을 누르면 원본 노션 페이지가 열립니다. 일정 수정은 노션에서 해주세요.<br>
+  한국시간 기준 지난달·이번 달·다음 달을 표시합니다. 저장된 일정을 먼저 보여주고, 화면을 열어두면 5분마다 최신 일정을 확인합니다.</p>
+</main>
+<script>
+(() => {
+  'use strict';
+  const POLL_MS = window.YEOLLIN_POLL_MS || 5 * 60 * 1000;   // 5분 자동 갱신
+  const RESUME_MS = 60 * 1000;                                // 다시 화면에 돌아왔을 때, 1분 넘었으면 갱신
+  const CACHE_KEY = 'yeollin-cal-cache-v2';
+  const TOKEN_KEY = 'yeollin-cal-token-v2';
+  const KST = 9 * 60 * 60 * 1000;
+
+  const $ = (id) => document.getElementById(id);
+  const pad = (x) => String(x).padStart(2, '0');
+
+  // 브라우저 저장소는 아이폰/노션 앱 환경에 따라 막힐 수 있으므로 항상 실패에 대비합니다.
+  const mem = {};
+  const store = {
+    get(k) { try { const v = localStorage.getItem(k); if (v != null) return v; } catch {} return mem[k] ?? null; },
+    set(k, v) { mem[k] = v; try { localStorage.setItem(k, v); } catch {} },
+    del(k) { delete mem[k]; try { localStorage.removeItem(k); } catch {} },
+  };
+
+  // ── 상태 ──
+  let token = null;
+  let data = null;            // { events, range, fetchedAt, stale }
+  let byDay = new Map();
+  let view = null;            // { y, m } (m: 0~11)
+  let inflight = null;
+  let lastAttempt = 0;
+  let lastError = null;
+
+  try { const t = JSON.parse(store.get(TOKEN_KEY) || 'null'); if (t && Date.parse(t.expiresAt) > Date.now()) token = t.token; } catch {}
+  try { const c = JSON.parse(store.get(CACHE_KEY) || 'null'); if (c && Array.isArray(c.events)) setData(c); } catch {}
+
+  function kstToday() {
+    const d = new Date(Date.now() + KST);
+    return { y: d.getUTCFullYear(), m: d.getUTCMonth(), key: d.toISOString().slice(0, 10) };
+  }
+  const monthIndex = (y, m) => y * 12 + m;
+  function bounds() {            // 이동 가능한 범위: 한국시간 기준 지난달 ~ 다음 달
+    const t = kstToday(), c = monthIndex(t.y, t.m);
+    return { min: c - 1, max: c + 1, cur: c };
+  }
+  function clampView() {
+    const b = bounds();
+    if (!view) { const t = kstToday(); view = { y: t.y, m: t.m }; }
+    let i = Math.min(b.max, Math.max(b.min, monthIndex(view.y, view.m)));
+    view = { y: Math.floor(i / 12), m: i % 12 };
+  }
+
+  function setData(d) {
+    data = d;
+    byDay = new Map();
+    for (const e of d.events) {
+      // 시작일~종료일(포함) 모든 날짜에 표시
+      let cur = new Date(e.startDate + 'T00:00:00Z');
+      const end = new Date((e.endDate || e.startDate) + 'T00:00:00Z');
+      for (let n = 0; cur <= end && n < 400; n++) {
+        const k = cur.toISOString().slice(0, 10);
+        if (!byDay.has(k)) byDay.set(k, []);
+        byDay.get(k).push(e);
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+    }
+  }
+
+  // ── 그리기 ──
+  function render() {
+    clampView();
+    const b = bounds(), idx = monthIndex(view.y, view.m);
+    $('prev').disabled = idx <= b.min;
+    $('next').disabled = idx >= b.max;
+    $('current').disabled = idx === b.cur;
+    $('month').textContent = `${view.y}년 ${view.m + 1}월`;
+
+    const frag = document.createDocumentFragment();
+    ['월', '화', '수', '목', '금', '토', '일'].forEach((x, i) => {
+      const a = document.createElement('div');
+      a.className = 'weekday' + (i === 5 ? ' sat' : i === 6 ? ' sun' : '');
+      a.textContent = x; frag.append(a);
+    });
+    const first = new Date(Date.UTC(view.y, view.m, 1));
+    const lead = (first.getUTCDay() + 6) % 7;   // 월요일 시작
+    const count = new Date(Date.UTC(view.y, view.m + 1, 0)).getUTCDate();
+    const total = Math.ceil((lead + count) / 7) * 7;
+    const today = kstToday().key;
+    for (let i = 0; i < total; i++) {
+      const d = new Date(Date.UTC(view.y, view.m, i - lead + 1));
+      const key = d.toISOString().slice(0, 10), dow = d.getUTCDay();
+      const box = document.createElement('div');
+      box.className = 'day' + (d.getUTCMonth() !== view.m ? ' other' : '') + (key === today ? ' today' : '') + (dow === 6 ? ' sat' : dow === 0 ? ' sun' : '');
+      const num = document.createElement('div');
+      num.className = 'num'; num.textContent = d.getUTCDate(); box.append(num);
+      for (const e of byDay.get(key) || []) {
+        const a = document.createElement('a');
+        const multi = e.endDate && e.endDate !== e.startDate;
+        a.className = 'event' + (multi ? ' multi' : '');
+        if (e.time && key === e.startDate) { const t = document.createElement('span'); t.className = 't'; t.textContent = e.time; a.append(t); }
+        a.append(document.createTextNode(e.title));
+        a.title = multi ? `${e.title} (${e.startDate} ~ ${e.endDate})` : e.title;
+        if (/^https:\/\//.test(e.url || '')) { a.href = e.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+        box.append(a);
+      }
+      frag.append(box);
+    }
+    $('calendar').replaceChildren(frag);
+  }
+
+  const timeText = (iso) => { try { return new Date(iso).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Seoul' }); } catch { return ''; } };
+  const dateTimeText = (iso) => { try { return new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Seoul' }); } catch { return ''; } };
+
+  function showStatus(kind) {
+    const s = $('status');
+    s.className = '';
+    if (kind === 'loading') { s.textContent = data ? `최신 일정 확인 중… (${timeText(data.fetchedAt)} 기준 표시 중)` : '노션 일정 불러오는 중…'; return; }
+    if (lastError) {
+      s.className = data ? 'warn' : 'error';
+      s.textContent = data ? `⚠ ${lastError} · 저장된 일정(${dateTimeText(data.fetchedAt)} 기준)을 표시 중입니다.` : lastError;
+      return;
+    }
+    if (!data) { s.textContent = token ? '' : '암호를 입력하면 노션에서 일정을 읽어옵니다.'; return; }
+    if (data.stale) { s.className = 'warn'; s.textContent = `⚠ ${data.warningMessage || '노션 연결이 원활하지 않습니다.'} · ${dateTimeText(data.fetchedAt)} 기준 일정입니다.`; return; }
+    s.textContent = `일정 ${data.events.length}건 · ${timeText(data.fetchedAt)} 기준`;
+  }
+
+  function showGate(msg) {
+    $('gate').classList.remove('hidden');
+    $('gateMsg').textContent = msg || '';
+  }
+
+  // ── 서버 통신 ──
+  async function callApi(url, opts) {
+    let r;
+    try { r = await fetch(url, { cache: 'no-store', ...opts }); }
+    catch { throw { kind: 'network', message: navigator.onLine === false ? '인터넷 연결이 끊겨 있습니다.' : '서버에 연결하지 못했습니다.' }; }
+    let body = null;
+    try { body = await r.json(); } catch {}
+    if (!r.ok || !body) throw { kind: 'http', status: r.status, code: body && body.code, message: (body && body.error) || `서버 오류 (${r.status})` };
+    return body;
+  }
+
+  // 같은 시간에 여러 번 눌러도 요청은 하나만 나갑니다.
+  function refresh() {
+    if (!token) { showGate(); showStatus(); return Promise.resolve(); }
+    if (inflight) return inflight;
+    lastAttempt = Date.now();
+    showStatus('loading');
+    inflight = (async () => {
+      try {
+        const d = await callApi('/api/events', { headers: { Authorization: 'Bearer ' + token } });
+        lastError = null;
+        if (!d.stale || !data || Date.parse(d.fetchedAt) >= Date.parse(data.fetchedAt)) {
+          setData(d);
+          if (!d.stale) store.set(CACHE_KEY, JSON.stringify({ events: d.events, range: d.range, fetchedAt: d.fetchedAt }));
+        }
+        render();
+      } catch (e) {
+        if (e.status === 401) {                         // 암호 변경·만료 → 다시 입력 (표시 중인 일정은 유지)
+          token = null; store.del(TOKEN_KEY);
+          lastError = null;
+          showGate('암호를 다시 입력해 주세요.');
+        } else {
+          lastError = e.message || '일정을 불러오지 못했습니다.';
+        }
+      } finally {
+        inflight = null;
+        showStatus();
+      }
+    })();
+    return inflight;
+  }
+
+  async function login(password) {
+    $('unlock').disabled = true;
+    $('gateMsg').textContent = '';
+    try {
+      const t = await callApi('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      token = t.token;
+      store.set(TOKEN_KEY, JSON.stringify(t));   // 암호 자체는 저장하지 않고, 30일짜리 출입 토큰만 저장
+      $('password').value = '';
+      $('gate').classList.add('hidden');
+      await refresh();
+    } catch (e) {
+      showGate(e.message || '로그인에 실패했습니다.');
+    } finally {
+      $('unlock').disabled = false;
+    }
+  }
+
+  // ── 이벤트 연결 ──
+  const shift = (n) => { const i = monthIndex(view.y, view.m) + n; view = { y: Math.floor(i / 12), m: i % 12 }; render(); };  // 월 이동은 저장된 데이터로만 표시
+  $('prev').onclick = () => shift(-1);
+  $('next').onclick = () => shift(1);
+  $('current').onclick = () => { view = null; render(); };
+  $('refresh').onclick = () => refresh();
+  $('gate').onsubmit = (ev) => { ev.preventDefault(); const p = $('password').value; if (p) login(p); };
+
+  const due = (ms) => document.visibilityState === 'visible' && Date.now() - lastAttempt >= ms;
+  setInterval(() => { if (due(POLL_MS)) refresh(); else render(); }, Math.min(30 * 1000, POLL_MS));  // render: 자정·월말에 '오늘' 표시 갱신
+  document.addEventListener('visibilitychange', () => { if (due(RESUME_MS)) refresh(); });
+  window.addEventListener('pageshow', (e) => { if (e.persisted && due(RESUME_MS)) refresh(); });   // 아이폰 '뒤로 가기' 복귀
+  window.addEventListener('online', () => refresh());
+
+  // ── 시작: 저장된 일정 먼저 표시 → 최신 일정 조회 ──
+  render();
+  showStatus();
+  if (token) refresh(); else showGate();
+})();
+</script>
+</body>
+</html>

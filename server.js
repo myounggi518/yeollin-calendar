@@ -18,6 +18,7 @@ const NOTION_API_BASE = process.env.NOTION_API_BASE || 'https://api.notion.com';
 const NOTION_VERSION = '2025-09-03';
 const TITLE_PROP = '일정명 / Tasks';
 const DATE_PROP = '날짜';
+const CATEGORY_PROP = '업무속성'; // 일정 색 구분 기준 (노션 선택지 색을 그대로 사용)
 
 const SERVER_CACHE_MS = Number(process.env.SERVER_CACHE_MS ?? 60 * 1000); // 같은 데이터를 1분 동안 여러 직원이 공유 → Notion 호출 절약
 const STALE_MAX_MS = 24 * 60 * 60 * 1000;   // Notion 장애 시 최대 24시간 전 데이터까지 대신 제공
@@ -166,6 +167,15 @@ async function notionQuery(body, attempt = 0) {
   return data;
 }
 
+// 업무속성(선택/상태/다중선택) → { name, color }. 비어 있으면 null
+const NOTION_COLORS = new Set(['default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
+function readCategory(prop) {
+  if (!prop) return null;
+  const opt = prop.select || prop.status || (Array.isArray(prop.multi_select) ? prop.multi_select[0] : null);
+  if (!opt || !opt.name) return null;
+  return { name: String(opt.name).slice(0, 40), color: NOTION_COLORS.has(opt.color) ? opt.color : 'default' };
+}
+
 async function loadFromNotion(w) {
   const filter = { and: [
     { property: DATE_PROP, date: { on_or_after: w.queryFrom } },
@@ -192,7 +202,7 @@ async function loadFromNotion(w) {
     if (startDate >= w.until || endDate < w.from) continue;  // 3개월 범위와 겹치는 일정만
     const title = ((p.properties[TITLE_PROP] && p.properties[TITLE_PROP].title) || [])
       .map((x) => x.plain_text).join('').trim() || '제목 없음';
-    events.push({ id: p.id, title, startDate, endDate: endDate < startDate ? startDate : endDate, time: toKstTime(d.start), url: p.url });
+    events.push({ id: p.id, title, startDate, endDate: endDate < startDate ? startDate : endDate, time: toKstTime(d.start), url: p.url, category: readCategory(p.properties[CATEGORY_PROP]) });
   }
   events.sort((a, b) => (a.startDate.localeCompare(b.startDate)) || (a.time.localeCompare(b.time)) || a.title.localeCompare(b.title, 'ko'));
   return { events, range: { from: w.from, until: w.until }, fetchedAt: new Date().toISOString() };

@@ -32,9 +32,22 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
 .day.sat .num{color:#316abc}.day.sun .num{color:#d64949}
 .today .num{display:inline-block;background:#225bc8;color:#fff!important;border-radius:99px;padding:2px 6px}
 .event{display:block;padding:4px 5px;margin:3px 0;background:#e8f0fe;color:#1f4f9c;text-decoration:none;font-size:12px;line-height:1.3;white-space:normal;overflow-wrap:anywhere;word-break:keep-all;border-radius:5px}
-.event.multi{background:#fff1d6;color:#7a4b00}
 .event .t{font-weight:700;margin-right:2px}
-.event:hover{background:#d5e4ff}
+.event:hover{filter:brightness(.95)}
+/* 업무속성 색 (노션 선택지 색과 같은 계열) */
+.c-none{background:#fff;color:#4b5563;box-shadow:inset 0 0 0 1px #d6dbe3}
+.c-default,.c-gray{background:#ececea;color:#46443f}
+.c-brown{background:#f1e7e1;color:#7d4a33}
+.c-orange{background:#fbe4cf;color:#9a4210}
+.c-yellow{background:#f9edc4;color:#755a00}
+.c-green{background:#dcefdf;color:#2b6a3c}
+.c-blue{background:#dcecf7;color:#1f5f8f}
+.c-purple{background:#ece3f6;color:#64409a}
+.c-pink{background:#f8e1ec;color:#9b2f67}
+.c-red{background:#fbdcdc;color:#a8231d}
+.event.multi{border-left:3px solid currentColor}  /* 여러 날 일정 */
+#legend{display:flex;flex-wrap:wrap;gap:4px 6px;margin:0 0 8px;font-size:12px}
+#legend span{padding:2px 7px;border-radius:99px;white-space:nowrap}
 #gate{background:#fff;border:1px solid #dbe1e9;padding:14px;border-radius:12px;margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap}
 #gate input{min-width:150px;flex:1;padding:10px;border:1px solid #ccd5e0;border-radius:8px;font-size:16px} /* 16px 미만이면 아이폰이 화면을 확대함 */
 #gateMsg{flex-basis:100%;font-size:12px;color:#b42318;margin:0}
@@ -51,6 +64,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   .bar button{padding:7px 9px}
   .month{min-width:86px}
   #status{font-size:11px}
+  #legend{font-size:11px}
 }
 </style>
 </head>
@@ -72,6 +86,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
     <button id="refresh" type="button">새로고침</button>
   </div>
   <div id="status" role="status"></div>
+  <div id="legend" aria-label="업무속성 색 안내"></div>
   <div class="calendar" id="calendar"></div>
   <p class="hint">일정을 누르면 원본 노션 페이지가 열립니다. 일정 수정은 노션에서 해주세요.<br>
   한국시간 기준 지난달·이번 달·다음 달을 표시합니다. 저장된 일정을 먼저 보여주고, 화면을 열어두면 5분마다 최신 일정을 확인합니다.</p>
@@ -170,16 +185,35 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
       for (const e of byDay.get(key) || []) {
         const a = document.createElement('a');
         const multi = e.endDate && e.endDate !== e.startDate;
-        a.className = 'event' + (multi ? ' multi' : '');
+        a.className = 'event c-' + (e.category ? e.category.color : 'none') + (multi ? ' multi' : '');
         if (e.time && key === e.startDate) { const t = document.createElement('span'); t.className = 't'; t.textContent = e.time; a.append(t); }
         a.append(document.createTextNode(e.title));
-        a.title = multi ? `${e.title} (${e.startDate} ~ ${e.endDate})` : e.title;
+        a.title = (e.category ? `[${e.category.name}] ` : '') + e.title + (multi ? ` (${e.startDate} ~ ${e.endDate})` : '');
         if (/^https:\/\//.test(e.url || '')) { a.href = e.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
         box.append(a);
       }
       frag.append(box);
     }
     $('calendar').replaceChildren(frag);
+    renderLegend();
+  }
+
+  // 색 안내: 받은 일정에 있는 업무속성만, 많은 순서로 + '미지정' + '여러 날'
+  function renderLegend() {
+    const counts = new Map();
+    let none = 0, multi = false;
+    for (const e of (data && data.events) || []) {
+      if (e.category) { const k = e.category.name; const c = counts.get(k) || { n: 0, color: e.category.color }; c.n++; counts.set(k, c); }
+      else none++;
+      if (e.endDate && e.endDate !== e.startDate) multi = true;
+    }
+    const box = $('legend');
+    box.replaceChildren();
+    if (!counts.size) return;
+    const chip = (text, cls) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; box.append(s); };
+    [...counts].sort((a, b) => b[1].n - a[1].n).forEach(([name, c]) => chip(name, 'c-' + c.color));
+    if (none) chip('미지정', 'c-none');
+    if (multi) chip('▍여러 날 일정', 'c-none');
   }
 
   const timeText = (iso) => { try { return new Date(iso).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Seoul' }); } catch { return ''; } };

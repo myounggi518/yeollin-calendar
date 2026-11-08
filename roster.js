@@ -26,7 +26,9 @@ const ALL_STAFF_WORDS = ['전직원'];             // 근무자 칸에 있으면
 const ALL_OFF_WORDS = ['전체휴무', '전직원휴무', '전원휴무']; // 제목에 있으면 11명 전원 휴무
 const OFF_WORD = '휴무';
 // 오늘(한국시간)까지, 그날 어떤 일정에도 없는 직원은 자동으로 휴무 표시. 아래 직원은 자동 휴무에서 제외
-const AUTO_OFF_EXCLUDE = ['이득영'];
+const AUTO_OFF_EXCLUDE = ['이득영', '김광헌'];
+// 근무일수·휴무일수를 세지 않는(빈칸으로 두는) 직원
+const NO_COUNT = ['김광헌'];
 
 // 긴 이름부터 찾아서 지움 → '이이사'가 '이사'로 두 번 잡히는 일 등을 막음
 const ALIAS_LIST = STAFF.flatMap((s) => s.aliases.map((a) => [a, s.name])).sort((a, b) => b[0].length - a[0].length);
@@ -105,8 +107,8 @@ function buildRoster(month, data, now = Date.now()) {
     return {
       name: s.name,
       cells: c,
-      workDays: Object.values(c).filter((x) => x.work.length).length,
-      offDays: Object.values(c).filter((x) => x.off).length,
+      workDays: NO_COUNT.includes(s.name) ? null : Object.values(c).filter((x) => x.work.length).length,
+      offDays: NO_COUNT.includes(s.name) ? null : Object.values(c).filter((x) => x.off).length,
     };
   });
   // 색 안내용: 이 달에 나온 업무속성 (많은 순)

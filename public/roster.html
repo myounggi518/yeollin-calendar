@@ -178,7 +178,7 @@ th.sum{min-width:42px}
         }
         tr.append(td);
       }
-      tr.append(el('td', 'sum', String(s.workDays)), el('td', 'sum', String(s.offDays)));
+      tr.append(el('td', 'sum', s.workDays == null ? '' : String(s.workDays)), el('td', 'sum', s.offDays == null ? '' : String(s.offDays)));
       tbody.append(tr);
     }
     tbl.replaceChildren(thead, tbody);

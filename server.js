@@ -311,7 +311,7 @@ async function handle(req, res) {
     } else {
       const month = String(url.searchParams.get('month') || '');
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return sendError(res, 'BAD_REQUEST');
-      if (!rosterMonthAllowed(month, Date.now())) return sendJson(res, 400, { error: `근무배치표는 ${ROSTER_START_MONTH}부터 1년 뒤까지 볼 수 있습니다.`, code: 'MONTH_OUT_OF_RANGE' });
+      if (!rosterMonthAllowed(month, Date.now())) return sendJson(res, 400, { error: `근무배치표는 ${ROSTER_START_MONTH}부터 내년 12월까지 볼 수 있습니다.`, code: 'MONTH_OUT_OF_RANGE' });
       key = `roster:${month}`; load = () => getRoster(month);
     }
     try {

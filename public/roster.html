@@ -104,7 +104,7 @@ th.sum{min-width:42px}
   const todayKey = () => kstNow().toISOString().slice(0, 10);
   const idx = (m) => { const [y, mm] = m.split('-').map(Number); return y * 12 + mm - 1; };
   const fromIdx = (i) => `${Math.floor(i / 12)}-${String(i % 12 + 1).padStart(2, '0')}`;
-  const minIdx = () => idx(START), maxIdx = () => idx(curMonth()) + 12;
+  const minIdx = () => idx(START), maxIdx = () => (kstNow().getUTCFullYear() + 1) * 12 + 11;   // 내년 12월까지
   const clampMonth = (m) => fromIdx(Math.min(maxIdx(), Math.max(minIdx(), idx(m))));
 
   const qs = new URLSearchParams(location.search).get('month');

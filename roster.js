@@ -42,11 +42,11 @@ const hasAny = (text, words) => words.some((w) => String(text || '').includes(w)
 
 function rosterMonthAllowed(month, now) {
   const k = new Date(now + 9 * 3600e3);
-  const cur = k.getUTCFullYear() * 12 + k.getUTCMonth();
+  const maxIdx = (k.getUTCFullYear() + 1) * 12 + 11;   // 내년 12월까지
   const [y, m] = month.split('-').map(Number);
   const idx = y * 12 + (m - 1);
   const [sy, sm] = ROSTER_START_MONTH.split('-').map(Number);
-  return idx >= sy * 12 + (sm - 1) && idx <= cur + 12;
+  return idx >= sy * 12 + (sm - 1) && idx <= maxIdx;
 }
 
 function daysOf(month) {

@@ -413,9 +413,10 @@ async function handle(req, res) {
       }
       if (req.method === 'POST' && url.pathname === '/api/gear') {
         const cal = await getEvents();
-        if (!cal.events.some((e) => gear.normId(e.id) === eventId)) return sendError(res, 'BAD_REQUEST');
+        const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
+        if (!ev) return sendError(res, 'BAD_REQUEST');
         const body = await readJson(req);
-        const row = await gear.saveRow(eventId, body || {});
+        const row = await gear.saveRow(eventId, body || {}, `${ev.startDate} ${ev.title}`);
         return sendJson(res, 200, { ok: true, row });
       }
       return sendError(res, 'NOT_FOUND');

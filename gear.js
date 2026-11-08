@@ -2,7 +2,7 @@
 /*
  * 반출장비 (일정별로 가져갈 장비) — 「📦 일정별 반출장비」 DB에 줄 단위로 저장합니다.
  * 장비 종류는 「🧰 장비 목록」 DB에서 읽습니다. 두 DB 모두 쓰기 키(NOTION_WRITE_KEY) 통합이 연결되어 있어야 합니다.
- * 원본 월간일정표에는 쓰지 않습니다(일정 페이지는 관계(relation)로 가리키기만 함).
+ * 원본 월간일정표에는 쓰지도, 연결하지도 않습니다. 어떤 일정인지는 「일정ID」(일정 페이지 ID)·「일정명」 글자로 기록합니다.
  */
 const GEAR_DS = process.env.GEAR_DATA_SOURCE_ID || '9dcadfff-d941-4595-9ae7-ae1b0ed6acfc';
 const CATALOG_DS = process.env.CATALOG_DATA_SOURCE_ID || '6d0dcc9e-4baf-4c1b-93b9-322a11609cf1';
@@ -57,7 +57,7 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
   };
 
   async function listRows(eventId) {
-    const rows = await queryAll(GEAR_DS, { filter: { property: '일정', relation: { contains: eventId } } });
+    const rows = await queryAll(GEAR_DS, { filter: { property: '일정ID', rich_text: { equals: eventId } } });
     return rows.map(rowOf);
   }
 
@@ -70,7 +70,7 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
   }
 
   // r = { pid?, gear?, block?, text?, qty, checked, note }  → 저장 후 줄 반환(수량 0이면 삭제 → null)
-  async function saveRow(eventId, r) {
+  async function saveRow(eventId, r, eventTitle) {
     return withLock(eventId, async () => {
       const cat = await getCatalog();
       const g = r.gear ? cat.find((x) => x.id === normId(r.gear)) : null;
@@ -99,7 +99,7 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
       if (target) page = await notionRequest('PATCH', `/v1/pages/${target.pid}`, { properties }, key);
       else page = await notionRequest('POST', '/v1/pages', {
         parent: { type: 'data_source_id', data_source_id: GEAR_DS },
-        properties: { ...properties, '일정': { relation: [{ id: eventId }] } },
+        properties: { ...properties, '일정ID': { rich_text: [{ text: { content: eventId } }] }, '일정명': { rich_text: [{ text: { content: String(eventTitle || '').slice(0, 200) } }] } },
       }, key);
       return rowOf(page);
     });

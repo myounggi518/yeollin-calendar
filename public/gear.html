@@ -84,12 +84,20 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     [ { k: 'radio', t: '무전기 + 인터컴', cats: ['무전기'], pick: 1 },
       { k: 'elec', t: '전기시스템 + 메인선', cats: ['전기'], pick: 1 },
       { k: 'a32', t: '32A 케이블', cats: ['32A'], fixed: 1 },
-      { k: 'multi', t: '멀티 케이블', cats: ['멀티'], fixed: 1, order: (g) => /박스|꼬리/.test(g.name) ? 1 : 0 } ],
+      { k: 'multi', t: '멀티 케이블', cats: ['멀티'], fixed: 1 } ],
     [ { k: 'xlr', t: 'XLR', cats: ['XLR'], fixed: 1 },
       { k: 'ac', t: '전원선', cats: ['전원'], fixed: 1 },
-      { k: 'stand', t: '마이크 & 스피커 스탠드', cats: ['스탠드'], fixed: 1, skip: ['보면대'],
-        order: (g) => ['스피커 스탠드', '마이크 스탠드 롱', '마이크 스탠드 숏'].indexOf(g.name) + 1 || 9 } ],
+      { k: 'stand', t: '마이크 & 스피커 스탠드', cats: ['스탠드'], fixed: 1, skip: ['보면대'] } ],
   ];
+  // 시트 순서대로 정렬 (목록에 없는 새 장비는 맨 뒤)
+  const ORDER = {
+    a32: ['3상', '단상', '16A 변환'],
+    multi: ['Digi-4ch-30m', 'Digi-4ch-50m', 'Anal-4ch-30m', 'Anal-4ch-50m', '12ch', '16ch-30m', '16ch-50m', '24ch', '12채널 박스', '16채널 박스', '24채널 박스', '12채널 꼬리', '16채널 꼬리', '24채널 꼬리'],
+    xlr: ['3m', '5m', '10m', '20m', '2ch', '4ch', '8ch', '55(mono)', '55(stereo)', '55', '16patch', '20patch', 'aes/ebu 3m', 'aes/ebu 10m', '3.5-XLR', '3.5-Ctype'],
+    ac: ['5m', '10m', '15m', '20m', '30m', '50m', '1구', '콘센트박스', 'power link 3m', 'power link 5m', 'power link 10m', 'Y케이블', 'AC케이블'],
+    stand: ['스피커 스탠드', '마이크 스탠드 롱', '마이크 스탠드 숏'],
+  };
+  for (const col of LAYOUT) for (const b of col) if (ORDER[b.k]) b.order = (g) => { const i = ORDER[b.k].indexOf(g.name); return i < 0 ? 999 : i; };
   const BLOCKS = LAYOUT.flat();
   const blockOfCat = {}; BLOCKS.forEach((b) => b.cats.forEach((c) => { blockOfCat[c] = b; }));
 

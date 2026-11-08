@@ -25,6 +25,8 @@ const STAFF = [
 const ALL_STAFF_WORDS = ['전직원'];             // 근무자 칸에 있으면 11명 전원 근무
 const ALL_OFF_WORDS = ['전체휴무', '전직원휴무', '전원휴무']; // 제목에 있으면 11명 전원 휴무
 const OFF_WORD = '휴무';
+// 오늘(한국시간)까지, 그날 어떤 일정에도 없는 직원은 자동으로 휴무 표시. 아래 직원은 자동 휴무에서 제외
+const AUTO_OFF_EXCLUDE = ['이득영'];
 
 // 긴 이름부터 찾아서 지움 → '이이사'가 '이사'로 두 번 잡히는 일 등을 막음
 const ALIAS_LIST = STAFF.flatMap((s) => s.aliases.map((a) => [a, s.name])).sort((a, b) => b[0].length - a[0].length);
@@ -56,7 +58,7 @@ function daysOf(month) {
 }
 
 // data = loadFromNotion() 결과 (그 달과 겹치는 일정)
-function buildRoster(month, data) {
+function buildRoster(month, data, now = Date.now()) {
   const days = daysOf(month);
   const first = days[0], last = days[days.length - 1];
   const cells = Object.fromEntries(STAFF.map((s) => [s.name, {}]));
@@ -84,6 +86,17 @@ function buildRoster(month, data) {
     for (const d of range) {
       eventsByDay[d].push(chip);
       for (const n of who) cell(n, d).work.push(chip);
+    }
+  }
+
+  // 자동 휴무: 오늘까지의 날짜에서 근무도 휴무도 없는 직원 → 휴무
+  const today = new Date(now + 9 * 3600e3).toISOString().slice(0, 10);
+  for (const s of STAFF) {
+    if (AUTO_OFF_EXCLUDE.includes(s.name)) continue;
+    for (const d of days) {
+      if (d > today) break;
+      const c = cells[s.name][d];
+      if (!c || (!c.work.length && !c.off)) cell(s.name, d).off = true;
     }
   }
 

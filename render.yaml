@@ -16,5 +16,7 @@ services:
         generateValue: true
       - key: NOTION_DATA_SOURCE_ID
         value: 272d2f7f-5131-8205-b193-87613435dcf2
+      - key: NOTION_WRITE_KEY      # 구조물 체크 기록 DB 전용 통합 키(쓰기). 비우면 구조물 기능 꺼짐
+        sync: false
       - key: NODE_VERSION
         value: "22"

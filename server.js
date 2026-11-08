@@ -2,7 +2,7 @@
 /*
  * 열린기획 월간 일정표 — Notion 읽기 전용 서버 (v2)
  * - 외부 패키지 없이 Node.js 20+ 기본 기능만 사용합니다.
- * - Notion에는 "조회(query)" 요청만 보냅니다. 쓰기/수정/삭제 코드는 없습니다.
+ * - 원본 월간일정표에는 "조회(query)"만 합니다. 쓰기는 「🏗️ 구조물 체크 기록」 DB에만, 그 DB 전용 키로 합니다.
  */
 const http = require('node:http');
 const fs = require('node:fs');
@@ -15,13 +15,16 @@ const NOTION_API_KEY = process.env.NOTION_API_KEY || '';
 const CALENDAR_PASSWORD = process.env.CALENDAR_PASSWORD || '';
 const DATA_SOURCE_ID = process.env.NOTION_DATA_SOURCE_ID || '272d2f7f-5131-8205-b193-87613435dcf2';
 const NOTION_API_BASE = process.env.NOTION_API_BASE || 'https://api.notion.com'; // 테스트 때만 바꿉니다
+// 구조물 체크용(쓰기): 「🏗️ 구조물 체크 기록」 DB에만 연결된 별도 통합 키. 없으면 구조물 체크 기능은 꺼집니다.
+const NOTION_WRITE_KEY = process.env.NOTION_WRITE_KEY || '';
+const STRUCT_DATA_SOURCE_ID = process.env.STRUCT_DATA_SOURCE_ID || '18001b84-b4c0-40ae-ba4d-f92ce77bcd7c';
 const NOTION_VERSION = '2025-09-03';
 const TITLE_PROP = '일정명 / Tasks';
 const DATE_PROP = '날짜';
 const CATEGORY_PROP = '업무속성'; // 일정 색 구분 기준 (노션 선택지 색을 그대로 사용)
 const WORKERS_PROP = '근무자';
 const PERSONAL_OFF_PROP = '개인휴무';
-const { buildRoster, rosterMonthAllowed, ROSTER_START_MONTH } = require('./roster');
+const { buildRoster, rosterMonthAllowed, ROSTER_START_MONTH, structAllowedFor } = require('./roster');
 
 const SERVER_CACHE_MS = Number(process.env.SERVER_CACHE_MS ?? 60 * 1000); // 같은 데이터를 1분 동안 여러 직원이 공유 → Notion 호출 절약
 const STALE_MAX_MS = 24 * 60 * 60 * 1000;   // Notion 장애 시 최대 24시간 전 데이터까지 대신 제공
@@ -52,6 +55,8 @@ const ERRORS = {
   NOTION_ERROR:      [502, '노션 일정 조회에 실패했습니다. 관리자에게 알려 주세요.'],
   TOO_MANY_RESULTS:  [502, '조회 결과가 너무 많습니다. 관리자에게 알려 주세요.'],
   BAD_REQUEST:       [400, '잘못된 요청입니다.'],
+  STRUCT_DISABLED:   [503, '구조물 체크 기능이 아직 설정되지 않았습니다. 관리자에게 알려 주세요.'],
+  STRUCT_NOT_ALLOWED:[400, '근무한 날(오늘까지)에만 구조물 체크를 할 수 있습니다.'],
   NOT_FOUND:         [404, '페이지를 찾을 수 없습니다.'],
 };
 
@@ -135,18 +140,20 @@ function toKstTime(s) {
   return Number.isNaN(t) ? '' : new Date(t + KST_OFFSET_MS).toISOString().slice(11, 16);
 }
 
-// ── Notion 조회 (읽기 전용) ─────────────────────────────────────────
-async function notionQuery(body, attempt = 0) {
+// ── Notion 요청 ─────────────────────────────────────────────────────
+// 월간일정표(원본)는 읽기 전용 키(NOTION_API_KEY)로 "조회"만 합니다.
+// 구조물 체크 기록 DB만 별도 키(NOTION_WRITE_KEY)로 쓰기를 합니다. 이 키는 그 DB에만 연결되어 있어 원본에 쓸 수 없습니다.
+async function notionRequest(method, apiPath, body, key, attempt = 0) {
   let res;
   try {
-    res = await fetch(`${NOTION_API_BASE}/v1/data_sources/${encodeURIComponent(DATA_SOURCE_ID)}/query`, {
-      method: 'POST',
+    res = await fetch(`${NOTION_API_BASE}${apiPath}`, {
+      method,
       headers: {
-        Authorization: `Bearer ${NOTION_API_KEY}`,
+        Authorization: `Bearer ${key}`,
         'Notion-Version': NOTION_VERSION,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(body),
+      body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(NOTION_TIMEOUT_MS),
     });
   } catch (e) {
@@ -155,7 +162,7 @@ async function notionQuery(body, attempt = 0) {
   if (res.status === 429 && attempt < 1) {                // 한도 초과 시 1회만, 짧게 기다렸다 재시도
     const wait = Math.min(Number(res.headers.get('retry-after')) || 1, 3);
     await sleep(wait * 1000);
-    return notionQuery(body, attempt + 1);
+    return notionRequest(method, apiPath, body, key, attempt + 1);
   }
   let data = null;
   try { data = await res.json(); } catch { /* JSON이 아닌 응답 */ }
@@ -167,8 +174,74 @@ async function notionQuery(body, attempt = 0) {
     if (res.status >= 500) throw new AppError('NOTION_DOWN');
     throw new AppError('NOTION_ERROR');
   }
-  if (!data || !Array.isArray(data.results)) throw new AppError('NOTION_ERROR');
+  if (!data) throw new AppError('NOTION_ERROR');
   return data;
+}
+async function notionQuery(body) {
+  const data = await notionRequest('POST', `/v1/data_sources/${encodeURIComponent(DATA_SOURCE_ID)}/query`, body, NOTION_API_KEY);
+  if (!Array.isArray(data.results)) throw new AppError('NOTION_ERROR');
+  return data;
+}
+
+// ── 구조물 체크 (직원이 직접 체크 → 「🏗️ 구조물 체크 기록」 DB) ─────────
+const STRUCT_ENABLED = !!(NOTION_WRITE_KEY && STRUCT_DATA_SOURCE_ID);
+async function structQuery(filter) {
+  const out = []; let cursor;
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const body = { page_size: 100, filter }; if (cursor) body.start_cursor = cursor;
+    const d = await notionRequest('POST', `/v1/data_sources/${encodeURIComponent(STRUCT_DATA_SOURCE_ID)}/query`, body, NOTION_WRITE_KEY);
+    out.push(...(d.results || []));
+    if (!d.has_more) break;
+    cursor = d.next_cursor;
+  }
+  return out;
+}
+const structRow = (p) => ({
+  id: p.id,
+  name: p.properties?.['직원']?.select?.name || '',
+  date: (p.properties?.['날짜']?.date?.start || '').slice(0, 10),
+  checked: !!p.properties?.['체크']?.checkbox,
+});
+// 한 달치 체크: { 이름: [날짜, ...] }
+async function loadStructMonth(month) {
+  const [y, m] = month.split('-').map(Number);
+  const rows = await structQuery({ and: [
+    { property: '날짜', date: { on_or_after: ymd(y, m - 1) } },
+    { property: '날짜', date: { before: ymd(y, m) } },
+    { property: '체크', checkbox: { equals: true } },
+  ] });
+  const map = {};
+  for (const r of rows.map(structRow)) if (r.name && r.date) (map[r.name] ||= new Set()).add(r.date);
+  return Object.fromEntries(Object.entries(map).map(([k, v]) => [k, [...v].sort()]));
+}
+// 같은 직원·날짜는 한 줄만: 있으면 '체크'만 바꾸고, 없으면 새로 만듦
+const structLocks = new Map();
+async function setStruct(name, date, checked) {
+  const key = `${name}|${date}`;
+  while (structLocks.has(key)) await structLocks.get(key).catch(() => {});
+  const job = (async () => {
+    const existing = (await structQuery({ and: [
+      { property: '직원', select: { equals: name } },
+      { property: '날짜', date: { equals: date } },
+    ] })).map(structRow);
+    if (existing.length) {
+      for (const r of existing) if (r.checked !== checked) {
+        await notionRequest('PATCH', `/v1/pages/${r.id}`, { properties: { '체크': { checkbox: checked } } }, NOTION_WRITE_KEY);
+      }
+    } else if (checked) {
+      await notionRequest('POST', '/v1/pages', {
+        parent: { type: 'data_source_id', data_source_id: STRUCT_DATA_SOURCE_ID },
+        properties: {
+          '기록': { title: [{ text: { content: `${name} ${date} 구조물` } }] },
+          '직원': { select: { name } },
+          '날짜': { date: { start: date } },
+          '체크': { checkbox: true },
+        },
+      }, NOTION_WRITE_KEY);
+    }
+  })();
+  structLocks.set(key, job);
+  try { await job; } finally { if (structLocks.get(key) === job) structLocks.delete(key); }
 }
 
 // 업무속성(선택/상태/다중선택) → { name, color }. 비어 있으면 null
@@ -262,7 +335,13 @@ async function getEvents() {
 async function getRoster(month) {
   const [y, m] = month.split('-').map(Number);
   const w = { from: ymd(y, m - 1), until: ymd(y, m), queryFrom: ymd(y, m - 3) };
-  return cached(`roster:${month}`, async () => buildRoster(month, await loadFromNotion(w)));
+  return cached(`roster:${month}`, async () => {
+    const [d, struct] = await Promise.all([
+      loadFromNotion(w),
+      STRUCT_ENABLED ? loadStructMonth(month).catch((e) => { console.error('구조물 기록 조회 실패:', e.code || e.message); return undefined; }) : null,
+    ]);
+    return buildRoster(month, d, Date.now(), struct);
+  });
 }
 
 // ── 요청 처리 ───────────────────────────────────────────────────────
@@ -298,6 +377,31 @@ async function handle(req, res) {
   if (req.method === 'GET' && ['/roster', '/roster.html'].includes(url.pathname)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     return res.end(ROSTER_HTML);
+  }
+
+  // 구조물 체크 저장: { name, date: 'YYYY-MM-DD', checked: true|false }
+  if (req.method === 'POST' && url.pathname === '/api/structure') {
+    if (limited(`struct:${ip}`, 30, 60 * 1000)) return sendError(res, 'TOO_MANY');
+    if (!STRUCT_ENABLED) return sendError(res, 'STRUCT_DISABLED');
+    if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
+    const body = await readJson(req);
+    const name = typeof body.name === 'string' ? body.name : '';
+    const date = typeof body.date === 'string' ? body.date : '';
+    if (typeof body.checked !== 'boolean' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return sendError(res, 'BAD_REQUEST');
+    const month = date.slice(0, 7);
+    if (!rosterMonthAllowed(month, Date.now())) return sendError(res, 'STRUCT_NOT_ALLOWED');
+    try {
+      const roster = await getRoster(month);
+      if (!structAllowedFor(roster, name, date, Date.now())) return sendError(res, 'STRUCT_NOT_ALLOWED');
+      await setStruct(name, date, body.checked);
+      cacheStore.delete(`roster:${month}`);   // 다음 조회 때 바로 반영
+      console.log(`구조물 ${body.checked ? '체크' : '해제'}: ${name} ${date}`);
+      return sendJson(res, 200, { ok: true, name, date, checked: body.checked });
+    } catch (e) {
+      const code = e instanceof AppError ? e.code : 'NOTION_ERROR';
+      if (!(e instanceof AppError)) console.error('Unexpected:', e);
+      return sendError(res, code);
+    }
   }
 
   const isEvents = url.pathname === '/api/events', isRoster = url.pathname === '/api/roster';

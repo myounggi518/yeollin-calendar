@@ -60,7 +60,19 @@ function daysOf(month) {
 }
 
 // data = loadFromNotion() 결과 (그 달과 겹치는 일정)
-function buildRoster(month, data, now = Date.now()) {
+// 구조물 체크 가능 여부: 집계 대상 직원 + 그날 근무 기록 있음 + 오늘(한국시간)까지
+function structAllowedFor(roster, name, date, now = Date.now()) {
+  if (!roster || !roster.structEnabled) return false;
+  if (!STAFF.some((s) => s.name === name) || NO_COUNT.includes(name)) return false;
+  const today = new Date(now + 9 * 3600e3).toISOString().slice(0, 10);
+  if (date > today) return false;
+  const s = roster.staff.find((x) => x.name === name);
+  const c = s && s.cells[date];
+  return !!(c && c.work.length);
+}
+
+// struct: { 이름: [날짜...] } (구조물 체크 기록), null = 기능 꺼짐, undefined = 이번에 못 읽음
+function buildRoster(month, data, now = Date.now(), struct = null) {
   const days = daysOf(month);
   const first = days[0], last = days[days.length - 1];
   const cells = Object.fromEntries(STAFF.map((s) => [s.name, {}]));
@@ -109,8 +121,12 @@ function buildRoster(month, data, now = Date.now()) {
       cells: c,
       workDays: NO_COUNT.includes(s.name) ? null : Object.values(c).filter((x) => x.work.length).length,
       offDays: NO_COUNT.includes(s.name) ? null : Object.values(c).filter((x) => x.off).length,
+      // 구조물: 체크한 날짜 목록과 횟수 (집계 제외 직원은 null)
+      structDays: (!struct || NO_COUNT.includes(s.name)) ? null : (struct[s.name] || []).filter((d) => d >= first && d <= last),
+      structCount: null,
     };
   });
+  for (const s of staff) if (s.structDays) s.structCount = s.structDays.length;
   // 색 안내용: 이 달에 나온 업무속성 (많은 순)
   const catCount = new Map();
   for (const e of data.events) if (e.category && !(e.personalOff === OFF_WORD || e.title.includes(OFF_WORD))) {
@@ -118,7 +134,11 @@ function buildRoster(month, data, now = Date.now()) {
     c.n++; catCount.set(e.category.name, c);
   }
   const categories = [...catCount.values()].sort((a, b) => b.n - a.n).map(({ name, color }) => ({ name, color }));
-  return { month, days, events: eventsByDay, offNotes, staff, categories, fetchedAt: data.fetchedAt };
+  return {
+    month, days, events: eventsByDay, offNotes, staff, categories, fetchedAt: data.fetchedAt,
+    structEnabled: struct !== null,          // 기능이 켜져 있는지
+    structUnavailable: struct === undefined, // 켜져 있지만 이번에 기록을 못 읽음
+  };
 }
 
-module.exports = { buildRoster, rosterMonthAllowed, findStaff, ROSTER_START_MONTH, STAFF };
+module.exports = { buildRoster, rosterMonthAllowed, findStaff, structAllowedFor, ROSTER_START_MONTH, STAFF, NO_COUNT };

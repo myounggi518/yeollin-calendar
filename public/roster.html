@@ -42,6 +42,11 @@ td.today{box-shadow:inset 2px 0 0 #225bc8,inset -2px 0 0 #225bc8}
 .sum.w{left:var(--nameW)}
 .sum.o{left:calc(var(--nameW) + var(--sumW));box-shadow:2px 0 0 #c9d2de}   /* 고정 칸 경계선 */
 td.sum.w{color:#1f5f8f}td.sum.o{color:#b42318}
+/* 구조물 칸(기능이 켜져 있을 때 4번째 고정 칸) */
+.sum.s{left:calc(var(--nameW) + 2 * var(--sumW));box-shadow:2px 0 0 #c9d2de}
+table.has-s .sum.o{box-shadow:none}
+td.sum.s{color:#9a4210}
+.st{display:block;padding:1px 4px;margin:0 0 2px;border-radius:4px;background:#fff1e0;color:#9a4210;font-weight:700;font-size:10px;text-align:center;box-shadow:inset 0 0 0 1px #f5c99a}
 thead .name,thead .sum{z-index:3}
 tr.ev td,tr.ev .name,tr.ev .sum{background:#fbfcfe}
 tr.ev .name{color:#59677d}
@@ -73,7 +78,13 @@ td.d{min-width:96px;max-width:130px}
 .p-stats{display:flex;gap:8px;margin-bottom:14px}
 .p-stat{flex:1;border-radius:10px;padding:10px;text-align:center;font-size:13px;font-weight:600}
 .p-stat b{display:block;font-size:26px;line-height:1.2}
-.p-stat.w{background:#e7f1fb;color:#1f5f8f}.p-stat.o{background:#fde2e1;color:#b42318}
+.p-stat.w{background:#e7f1fb;color:#1f5f8f}.p-stat.o{background:#fde2e1;color:#b42318}.p-stat.s{background:#fff1e0;color:#9a4210}
+/* 구조물 체크 버튼 */
+.st-btn{flex:0 0 auto;align-self:center;border:1.5px solid #f0b37a;background:#fff;color:#9a4210;border-radius:999px;padding:6px 10px;font-weight:700;font-size:13px;min-height:36px;white-space:nowrap}
+.st-btn .box{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-radius:4px;vertical-align:-3px;margin-right:5px;text-align:center;line-height:12px;font-size:12px}
+.st-btn.on{background:#f59e4b;border-color:#f59e4b;color:#fff}
+.st-btn:disabled{opacity:.55}
+.st-note{font-size:12px;color:#8a5a2b;background:#fff7ee;border-radius:8px;padding:8px 10px;margin:-4px 0 12px}
 .p-list{list-style:none;margin:0;padding:0}
 .p-list li{display:flex;gap:10px;padding:8px 2px;border-bottom:1px solid #eef1f5;align-items:flex-start}
 .p-list li.today{background:#f0f5ff;border-radius:8px;padding-left:6px}
@@ -186,8 +197,11 @@ td.d{min-width:96px;max-width:130px}
     const today = todayKey();
     const dayCls = (d) => { const w = new Date(d + 'T00:00:00Z').getUTCDay(); return (w === 6 ? 'sat' : w === 0 ? 'sun' : '') + (d === today ? ' today' : ''); };
 
+    const hasS = !!data.structEnabled;
+    tbl.classList.toggle('has-s', hasS);
+    const fixedCells = (tag, w, o, s) => { const a = [el(tag, 'sum w', w), el(tag, 'sum o', o)]; if (hasS) a.push(el(tag, 'sum s', s)); return a; };
     const thead = el('thead'), hr = el('tr');
-    hr.append(el('th', 'name', '구분'), el('th', 'sum w', '근무'), el('th', 'sum o', '휴무'));
+    hr.append(el('th', 'name', '구분'), ...fixedCells('th', '근무', '휴무', '구조물'));
     for (const d of data.days) {
       const th = el('th', dayCls(d), String(Number(d.slice(8))) + '일');
       th.append(el('small', '', DOW[new Date(d + 'T00:00:00Z').getUTCDay()]));
@@ -199,7 +213,7 @@ td.d{min-width:96px;max-width:130px}
     const tbody = el('tbody');
     // 행사 줄
     const ev = el('tr', 'ev');
-    ev.append(el('th', 'name', '행사'), el('td', 'sum w', ''), el('td', 'sum o', ''));
+    ev.append(el('th', 'name', '행사'), ...fixedCells('td', '', '', ''));
     for (const d of data.days) {
       const td = el('td', 'd ' + dayCls(d));
       for (const c of data.events[d] || []) td.append(chipEl(c));
@@ -207,7 +221,7 @@ td.d{min-width:96px;max-width:130px}
       ev.append(td);
     }
     tbody.append(ev);
-    const sep = el('tr', 'sep'); sep.append(el('th', 'name'), el('td', 'sum w'), el('td', 'sum o')); for (let k = 0; k < data.days.length; k++) sep.append(el('td')); tbody.append(sep);
+    const sep = el('tr', 'sep'); sep.append(el('th', 'name'), ...fixedCells('td')); for (let k = 0; k < data.days.length; k++) sep.append(el('td')); tbody.append(sep);
 
     // 직원 줄: 이름 | 근무일수 | 휴무일수 | 날짜들
     for (const s of data.staff) {
@@ -217,12 +231,13 @@ td.d{min-width:96px;max-width:130px}
       pick.type = 'button'; pick.title = `${s.name}님 일정만 보기`;
       pick.onclick = () => openPerson(s.name);
       nameTh.append(pick);
-      tr.append(nameTh,
-        el('td', 'sum w', s.workDays == null ? '' : String(s.workDays)),
-        el('td', 'sum o', s.offDays == null ? '' : String(s.offDays)));
+      const num = (v) => (v == null ? '' : String(v));
+      tr.append(nameTh, ...fixedCells('td', num(s.workDays), num(s.offDays), num(s.structCount)));
+      const sd = new Set(s.structDays || []);
       for (const d of data.days) {
         const td = el('td', 'd ' + dayCls(d));
         const c = s.cells[d];
+        if (sd.has(d)) td.append(el('span', 'st', '🏗 구조물'));
         if (c) {
           if (c.off) td.append(el('span', 'off', '휴무'));
           for (const w of c.work) td.append(chipEl(w));
@@ -256,11 +271,15 @@ td.d{min-width:96px;max-width:130px}
 
     if (s.workDays != null) {
       const stats = el('div', 'p-stats');
-      const w = el('div', 'p-stat w'); w.append(el('b', '', String(s.workDays)), document.createTextNode('근무일'));
-      const o = el('div', 'p-stat o'); o.append(el('b', '', String(s.offDays)), document.createTextNode('휴무일'));
-      stats.append(w, o);
+      const stat = (cls, n, label) => { const x = el('div', 'p-stat ' + cls); x.append(el('b', '', String(n)), document.createTextNode(label)); return x; };
+      stats.append(stat('w', s.workDays, '근무일'), stat('o', s.offDays, '휴무일'));
+      if (s.structCount != null) stats.append(stat('s', s.structCount, '구조물'));
       frag.push(stats);
     }
+    const canStruct = s.structDays != null;
+    if (canStruct) frag.push(el('p', 'st-note', '구조물 작업을 한 날은 오른쪽 [구조물]을 눌러 체크해 주세요. 근무한 날 중 오늘까지만 체크할 수 있습니다.'));
+    else if (data.structUnavailable && s.workDays != null) frag.push(el('p', 'st-note', '구조물 기록을 잠시 불러오지 못했습니다. 잠시 후 새로고침해 주세요.'));
+    const sd = new Set(s.structDays || []);
 
     const today = todayKey();
     const list = el('ul', 'p-list');
@@ -277,11 +296,53 @@ td.d{min-width:96px;max-width:130px}
       if (c.off) items.append(el('span', 'off', '휴무'));
       for (const x of c.work) items.append(chipEl(x));
       li.append(items);
+      // 구조물 체크 버튼: 근무한 날 + 오늘까지
+      if (canStruct && c.work.length && d <= today) {
+        const on = sd.has(d);
+        const b = el('button', 'st-btn' + (on ? ' on' : ''));
+        b.type = 'button';
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        b.append(el('span', 'box', on ? '✓' : ''), document.createTextNode('구조물'));
+        b.disabled = pendingStruct.has(`${s.name}|${d}`);
+        b.onclick = () => toggleStruct(s, d, !on);
+        li.append(b);
+      } else if (sd.has(d)) {
+        li.append(el('span', 'st', '🏗 구조물'));
+      }
       list.append(li);
       shown++;
     }
     frag.push(shown ? list : el('p', 'p-empty', '이 달에 표시할 근무나 휴무가 없습니다.'));
     box.replaceChildren(...frag);
+  }
+
+  // 구조물 체크/해제: 화면에 먼저 반영하고 서버에 저장, 실패하면 되돌림
+  const pendingStruct = new Set();
+  async function toggleStruct(s, d, checked) {
+    const key = `${s.name}|${d}`;
+    if (pendingStruct.has(key)) return;
+    pendingStruct.add(key);
+    const apply = (v) => {
+      const set = new Set(s.structDays || []);
+      if (v) set.add(d); else set.delete(d);
+      s.structDays = [...set].sort(); s.structCount = s.structDays.length;
+    };
+    apply(checked); render();
+    try {
+      let r;
+      try { r = await fetch('/api/structure', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: s.name, date: d, checked }) }); }
+      catch { throw new Error(navigator.onLine === false ? '인터넷 연결이 끊겨 있습니다.' : '서버에 연결하지 못했습니다.'); }
+      let body = null; try { body = await r.json(); } catch {}
+      if (!r.ok) throw new Error((body && body.error) || `저장 실패 (${r.status})`);
+      lastError = null;
+      try { store.set(cacheKey(month), JSON.stringify(data)); } catch {}
+    } catch (e) {
+      apply(!checked);
+      lastError = '구조물 체크 저장 실패: ' + (e.message || '');
+    } finally {
+      pendingStruct.delete(key);
+      render(); showStatus();
+    }
   }
 
   function openPerson(name) {

@@ -12,7 +12,7 @@ h1{font-size:clamp(18px,4vw,24px);margin:0}
 button,select,input{font:inherit;color:inherit}
 button{background:#fff;border:1px solid #ccd5e0;border-radius:8px;padding:7px 11px;cursor:pointer;touch-action:manipulation}
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px}
-#event{flex:1 1 260px;min-width:0;padding:8px;border:1px solid #ccd5e0;border-radius:8px;background:#fff;font-weight:700}
+#event{flex:1 1 200px;min-width:0;padding:8px;border:1px solid #ccd5e0;border-radius:8px;background:#fff;font-weight:700}
 #status{font-size:12px;color:#5e6a7e;min-height:18px;margin:2px 0 8px}
 #status.err{color:#b42318;font-weight:700}
 .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:start}
@@ -40,7 +40,26 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 .add{width:100%;border:0;border-top:1px dashed #ccd5e0;border-radius:0;color:#2156a5;font-weight:700;background:#fafcff}
 .sum{font-size:12px;color:#5e6a7e;margin-left:auto}
 .empty{display:none}
+/* 휴대폰: 입력칸 글자 16px(아이폰 확대 방지), 위쪽 고정 막대, 칸 접기 */
+.top.noprint{position:sticky;top:0;z-index:5;background:#f4f7fb;padding:6px 0}
+.blk h2{cursor:pointer;user-select:none}
+.blk h2 .cnt{margin-left:auto;font-size:12px;color:#1f7a3d;font-weight:700}
+.blk h2 .arr{font-size:11px;color:#5e6a7e;transition:transform .15s}
+.blk.fold h2 .arr{transform:rotate(-90deg)}
+.blk.fold table,.blk.fold .add{display:none}
+@media (max-width:640px){
+  body{padding:8px 8px 60px}
+  input.qty,input.note,input.kind,#event{font-size:16px}
+  input.qty{padding:8px 2px}
+  input[type=checkbox]{width:26px;height:26px}
+  th.q,td.q{width:64px} th.c,td.c{width:44px} th.n,td.n{width:30%}
+  td{padding:4px}
+  .blk h2{font-size:15px;padding:11px 10px}
+  .add{padding:12px}
+  button{padding:9px 12px}
+}
 @media print{
+  .blk.fold table{display:table!important}
   body{background:#fff;padding:0}
   .noprint,.add,#status{display:none!important}
   .grid{grid-template-columns:repeat(4,1fr);gap:6px}
@@ -103,6 +122,8 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 
   let catalog = [], byId = {}, events = [], eventId = null, rows = [];   // rows: 화면의 모든 줄 상태
   let seq = 0;
+  const folded = {};
+  const isPhone = () => window.matchMedia('(max-width:640px)').matches;
 
   const status = (msg, err) => { const s = $('status'); s.textContent = msg || ''; s.className = err ? 'err' : ''; };
 
@@ -137,7 +158,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   }
 
   async function openEvent(id) {
-    eventId = id || null; rows = [];
+    eventId = id || null; rows = []; for (const k in folded) delete folded[k];
     try { const u = new URL(location.href); if (id) u.searchParams.set('event', id); else u.searchParams.delete('event'); history.replaceState(null, '', u); } catch {}
     if (!id) { render(); status('일정을 고르세요.'); return; }
     status('목록 불러오는 중…');
@@ -219,7 +240,9 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
       const c = el('div', 'col');
       for (const b of col) {
         const box = el('section', 'blk');
-        const h = el('h2', null, b.t); box.append(h);
+        const h = el('h2'); h.append(el('span', null, b.t), el('span', 'cnt'), el('span', 'arr', '▼')); box.append(h);
+        h.addEventListener('click', () => { box.classList.toggle('fold'); folded[b.k] = box.classList.contains('fold'); });
+        box.dataset.k = b.k;
         const tbl = el('table');
         const hr = el('tr'); [['종류', ''], ['수량', 'q'], ['챙김', 'c'], ['NOTE', 'n']].forEach(([t, k]) => hr.append(el('th', k, t)));
         const thead = el('thead'); thead.append(hr);
@@ -245,6 +268,10 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
           box.append(add);
         }
         if (!eventId) box.querySelectorAll('input').forEach((i) => { i.disabled = true; });
+        // 휴대폰에서는 아직 넣은 게 없는 고정 칸(XLR·전원선 등 긴 목록)을 접어 둠. 머리글을 누르면 펼침
+        const hasAny = rows.some((r) => blockOfRow(r) === b && r.qty > 0);
+        const fold = b.k in folded ? folded[b.k] : (isPhone() && b.fixed && !hasAny);
+        box.classList.toggle('fold', !!fold);
         c.append(box);
       }
       grid.append(c);
@@ -254,6 +281,11 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 
   function updateSum() {
     const used = rows.filter((r) => r.qty > 0);
+    document.querySelectorAll('.blk').forEach((box) => {
+      const b = BLOCKS.find((x) => x.k === box.dataset.k);
+      const n = used.filter((r) => blockOfRow(r) === b).length;
+      box.querySelector('.cnt').textContent = n ? n + '종' : '';
+    });
     const done = used.filter((r) => r.checked).length;
     $('sum').textContent = eventId && used.length ? `챙김 ${done} / ${used.length}종` : '';
     const ev = events.find((e) => e.id === eventId);

@@ -38,6 +38,7 @@ const AUTH_ENABLED = CALENDAR_PASSWORD.length > 0;
 const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
 const ROSTER_HTML = fs.readFileSync(path.join(__dirname, 'public', 'roster.html'));
 const CLOCK_HTML = fs.readFileSync(path.join(__dirname, 'public', 'clock.html'));
+const GEAR_HTML = fs.readFileSync(path.join(__dirname, 'public', 'gear.html'));
 
 // ── 공통 도구 ───────────────────────────────────────────────────────
 class AppError extends Error { constructor(code) { super(code); this.code = code; } }
@@ -245,6 +246,9 @@ async function setStruct(name, date, checked) {
   try { await job; } finally { if (structLocks.get(key) === job) structLocks.delete(key); }
 }
 
+// ── 반출장비 (일정별 가져갈 장비) ─────────────────────────────────────
+const gear = require('./gear')({ notionRequest, key: NOTION_WRITE_KEY, AppError });
+
 // 업무속성(선택/상태/다중선택) → { name, color }. 비어 있으면 null
 const NOTION_COLORS = new Set(['default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
 function readCategory(prop) {
@@ -383,6 +387,43 @@ async function handle(req, res) {
   if (req.method === 'GET' && ['/roster', '/roster.html'].includes(url.pathname)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     return res.end(ROSTER_HTML);
+  }
+
+  // ── 반출장비 ──
+  if (req.method === 'GET' && ['/gear', '/gear.html'].includes(url.pathname)) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(GEAR_HTML);
+  }
+  if (url.pathname.startsWith('/api/gear')) {
+    if (limited(`gear:${ip}`, 120, 60 * 1000)) return sendError(res, 'TOO_MANY');
+    if (!STRUCT_ENABLED || !NOTION_API_KEY) return sendError(res, 'STRUCT_DISABLED');
+    if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
+    try {
+      if (req.method === 'GET' && url.pathname === '/api/gear/init') {
+        const [catalog, cal] = await Promise.all([gear.getCatalog(), getEvents()]);
+        const from = new Date(Date.now() + KST_OFFSET_MS - 7 * 864e5).toISOString().slice(0, 10);
+        const events = cal.events.filter((e) => e.endDate >= from)
+          .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, category: e.category && e.category.name }));
+        return sendJson(res, 200, { catalog, events });
+      }
+      const eventId = gear.normId(url.searchParams.get('event'));
+      if (!gear.isId(eventId)) return sendError(res, 'BAD_REQUEST');
+      if (req.method === 'GET' && url.pathname === '/api/gear') {
+        return sendJson(res, 200, { rows: await gear.listRows(eventId) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/gear') {
+        const cal = await getEvents();
+        if (!cal.events.some((e) => gear.normId(e.id) === eventId)) return sendError(res, 'BAD_REQUEST');
+        const body = await readJson(req);
+        const row = await gear.saveRow(eventId, body || {});
+        return sendJson(res, 200, { ok: true, row });
+      }
+      return sendError(res, 'NOT_FOUND');
+    } catch (e) {
+      const code = e instanceof AppError ? e.code : 'NOTION_ERROR';
+      if (!(e instanceof AppError)) console.error('Unexpected:', e);
+      return sendError(res, code);
+    }
   }
 
   // 구조물 체크 저장: { name, date: 'YYYY-MM-DD', checked: true|false }

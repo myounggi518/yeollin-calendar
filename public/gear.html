@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>행사준비목록</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#15243b;background:#f4f7fb;-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}
+body{margin:0;padding:12px 12px 40px}
+h1{font-size:clamp(18px,4vw,24px);margin:0}
+button,select,input{font:inherit;color:inherit}
+button{background:#fff;border:1px solid #ccd5e0;border-radius:8px;padding:7px 11px;cursor:pointer;touch-action:manipulation}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px}
+#event{flex:1 1 260px;min-width:0;padding:8px;border:1px solid #ccd5e0;border-radius:8px;background:#fff;font-weight:700}
+#status{font-size:12px;color:#5e6a7e;min-height:18px;margin:2px 0 8px}
+#status.err{color:#b42318;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:start}
+@media (max-width:1100px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.grid{grid-template-columns:1fr}}
+.col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.blk{background:#fff;border:1.5px solid #9aa7b8;border-radius:8px;overflow:hidden}
+.blk h2{margin:0;font-size:14px;padding:7px 9px;background:#e8edf4;border-bottom:1px solid #9aa7b8;display:flex;justify-content:space-between;align-items:center;gap:6px}
+.blk h2 small{font-weight:600;color:#5e6a7e;font-size:11px}
+table{width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed}
+th{font-size:11px;color:#5e6a7e;font-weight:600;padding:4px 5px;border-bottom:1px solid #dfe5ec;text-align:left}
+td{padding:3px 5px;border-bottom:1px solid #eef1f5;vertical-align:middle}
+th.q,td.q{width:58px;text-align:center}
+th.c,td.c{width:40px;text-align:center}
+th.n,td.n{width:28%}
+td.name{word-break:break-all;font-weight:600}
+input.qty{width:100%;text-align:center;padding:5px 2px;border:1px solid #e3c96a;border-radius:6px;background:#fff8d6;font-weight:700}
+input.qty.has{background:#ffe680;border-color:#c9a400}
+input.note,input.kind{width:100%;padding:5px;border:1px solid #dfe5ec;border-radius:6px;background:#fff;font-size:12px}
+input.kind{font-weight:600;font-size:13px}
+input[type=checkbox]{width:20px;height:20px;accent-color:#1f7a3d}
+tr.saving td{opacity:.55}
+tr.failed td{background:#fde2e1}
+tr.zero td.name{color:#8a95a5;font-weight:500}
+.add{width:100%;border:0;border-top:1px dashed #ccd5e0;border-radius:0;color:#2156a5;font-weight:700;background:#fafcff}
+.sum{font-size:12px;color:#5e6a7e;margin-left:auto}
+.empty{display:none}
+@media print{
+  body{background:#fff;padding:0}
+  .noprint,.add,#status{display:none!important}
+  .grid{grid-template-columns:repeat(4,1fr);gap:6px}
+  .blk{break-inside:avoid;border-width:1px}
+  tr.zero{display:none}
+  input{border:0!important;background:none!important;padding:0!important}
+  .blk.empty-print{display:none}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>📦 행사준비목록</h1>
+  <span class="sum" id="sum"></span>
+</div>
+<div class="top noprint">
+  <select id="event" aria-label="일정 선택"><option>불러오는 중…</option></select>
+  <button id="reload" title="다른 사람이 바꾼 내용 다시 불러오기">새로고침</button>
+  <button id="print">인쇄</button>
+</div>
+<div id="status"></div>
+<div class="grid" id="grid"></div>
+<datalist id="dl"></datalist>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+  // 시트(행사준비목록) 배치 그대로: 4줄, 위→아래
+  // fixed: 항목이 미리 깔려 수량만 채움 / pick: 「+ 추가」로 종류를 골라 넣음
+  const LAYOUT = [
+    [ { k: 'main', t: 'MAIN SPEAKER + AMP', cats: ['메인', '앰프'], pick: 1 },
+      { k: 'mon', t: 'Mon SPEAKER', cats: ['모니터'], pick: 1 },
+      { k: 'con', t: 'Console · local · DSP · stage BOX · 광케이블', cats: ['콘솔'], pick: 1 },
+      { k: 'wl', t: '무선 마이크', cats: ['무선'], pick: 1 } ],
+    [ { k: 'mic', t: '유선 마이크 + D.I box', cats: ['마이크', 'DI'], pick: 1 },
+      { k: 'iem', t: '인이어', cats: ['인이어'], pick: 1 },
+      { k: 'etc', t: '기타 장비 (스플리터·아비옴·녹음·호이스트·우천 등)', cats: ['기타', '우천'], pick: 1 } ],
+    [ { k: 'radio', t: '무전기 + 인터컴', cats: ['무전기'], pick: 1 },
+      { k: 'elec', t: '전기시스템 + 메인선', cats: ['전기'], pick: 1 },
+      { k: 'a32', t: '32A 케이블', cats: ['32A'], fixed: 1 },
+      { k: 'multi', t: '멀티 케이블', cats: ['멀티'], fixed: 1, order: (g) => /박스|꼬리/.test(g.name) ? 1 : 0 } ],
+    [ { k: 'xlr', t: 'XLR', cats: ['XLR'], fixed: 1 },
+      { k: 'ac', t: '전원선', cats: ['전원'], fixed: 1 },
+      { k: 'stand', t: '마이크 & 스피커 스탠드', cats: ['스탠드'], fixed: 1, skip: ['보면대'],
+        order: (g) => ['스피커 스탠드', '마이크 스탠드 롱', '마이크 스탠드 숏'].indexOf(g.name) + 1 || 9 } ],
+  ];
+  const BLOCKS = LAYOUT.flat();
+  const blockOfCat = {}; BLOCKS.forEach((b) => b.cats.forEach((c) => { blockOfCat[c] = b; }));
+
+  let catalog = [], byId = {}, events = [], eventId = null, rows = [];   // rows: 화면의 모든 줄 상태
+  let seq = 0;
+
+  const status = (msg, err) => { const s = $('status'); s.textContent = msg || ''; s.className = err ? 'err' : ''; };
+
+  async function api(path, opt) {
+    const r = await fetch(path, opt);
+    let d = null; try { d = await r.json(); } catch {}
+    if (!r.ok) throw new Error((d && d.error) || '서버 오류 (' + r.status + ')');
+    return d;
+  }
+
+  const fmtDate = (s) => { const [y, m, d] = s.split('-').map(Number); const w = '일월화수목금토'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]; return `${m}/${d}(${w})`; };
+
+  async function init() {
+    status('불러오는 중…');
+    try {
+      const d = await api('/api/gear/init');
+      catalog = d.catalog; byId = Object.fromEntries(catalog.map((g) => [g.id, g]));
+      events = d.events;
+      const sel = $('event'); sel.textContent = '';
+      sel.append(new Option('— 일정을 고르세요 —', ''));
+      const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+      let firstUpcoming = null;
+      for (const e of events) {
+        const label = `${fmtDate(e.startDate)}${e.endDate !== e.startDate ? '~' + fmtDate(e.endDate) : ''}  ${e.title}${e.category ? ' · ' + e.category : ''}`;
+        sel.append(new Option(label, e.id));
+        if (!firstUpcoming && e.endDate >= today) firstUpcoming = e.id;
+      }
+      const want = (new URLSearchParams(location.search).get('event') || '').replace(/-/g, '').toLowerCase();
+      if (want && events.some((e) => e.id === want)) sel.value = want;
+      if (sel.value) await openEvent(sel.value); else { status('위에서 일정을 고르면 그 일정의 준비목록이 열립니다.'); render(); }
+    } catch (e) { status(e.message, true); }
+  }
+
+  async function openEvent(id) {
+    eventId = id || null; rows = [];
+    try { const u = new URL(location.href); if (id) u.searchParams.set('event', id); else u.searchParams.delete('event'); history.replaceState(null, '', u); } catch {}
+    if (!id) { render(); status('일정을 고르세요.'); return; }
+    status('목록 불러오는 중…');
+    try {
+      const d = await api('/api/gear?event=' + id);
+      if (eventId !== id) return;
+      rows = d.rows.map((r) => ({ ...r, key: ++seq }));
+      render();
+      status('입력하면 바로 노션에 저장됩니다. 수량을 0으로 지우면 그 줄은 빠집니다.');
+    } catch (e) { status(e.message, true); }
+  }
+
+  function blockOfRow(r) {
+    if (r.gear) { const g = byId[r.gear]; return g ? blockOfCat[g.cat] : null; }
+    return BLOCKS.find((b) => b.k === r.block) || BLOCKS.find((b) => b.k === 'etc');
+  }
+
+  // ── 저장 (줄마다 순서대로, 입력이 멈추면 0.6초 뒤) ──
+  const timers = new Map(), chains = new Map();
+  function queueSave(r, tr) {
+    clearTimeout(timers.get(r.key));
+    timers.set(r.key, setTimeout(() => {
+      const prev = chains.get(r.key) || Promise.resolve();
+      const job = prev.then(() => doSave(r, tr));
+      chains.set(r.key, job.catch(() => {}));
+    }, 600));
+  }
+  async function doSave(r, tr) {
+    tr.classList.add('saving'); tr.classList.remove('failed');
+    try {
+      const body = { pid: r.pid || undefined, gear: r.gear || undefined, block: r.block, text: r.text, qty: r.qty, checked: r.checked, note: r.note };
+      const d = await api('/api/gear?event=' + eventId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      r.pid = d.row ? d.row.pid : null;
+      status('저장됨 · ' + new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }));
+    } catch (e) { tr.classList.add('failed'); status('저장 실패: ' + e.message + ' (다시 입력하면 재시도)', true); }
+    finally { tr.classList.remove('saving'); updateSum(); }
+  }
+
+  function rowEl(r, b) {
+    const tr = el('tr');
+    const tdN = el('td', 'name');
+    if (b.fixed) tdN.textContent = byId[r.gear] ? byId[r.gear].name : r.text;
+    else {
+      const inp = el('input', 'kind'); inp.value = r.gear ? (byId[r.gear] || {}).name || '' : r.text;
+      inp.placeholder = '종류'; inp.setAttribute('list', 'dl');
+      inp.addEventListener('focus', () => fillList(b));
+      inp.addEventListener('change', () => {
+        const v = inp.value.trim();
+        const g = catalog.find((x) => b.cats.includes(x.cat) && (x.name === v || x.full === v));
+        if (g) { r.gear = g.id; r.text = ''; inp.value = g.name; } else { r.gear = null; r.text = v; r.block = b.k; }
+        if (!r.qty && v) { r.qty = 1; qty.value = 1; }
+        queueSave(r, tr); paint();
+      });
+      tdN.append(inp);
+    }
+    const qty = el('input', 'qty'); qty.type = 'number'; qty.inputMode = 'numeric'; qty.min = 0; qty.value = r.qty || '';
+    qty.addEventListener('input', () => { r.qty = Math.max(0, parseInt(qty.value, 10) || 0); paint(); queueSave(r, tr); });
+    const chk = el('input'); chk.type = 'checkbox'; chk.checked = !!r.checked; chk.title = '챙김';
+    chk.addEventListener('change', () => { r.checked = chk.checked; queueSave(r, tr); });
+    const note = el('input', 'note'); note.value = r.note || ''; note.placeholder = '';
+    note.addEventListener('input', () => { r.note = note.value; queueSave(r, tr); });
+    const tq = el('td', 'q'); tq.append(qty);
+    const tc = el('td', 'c'); tc.append(chk);
+    const tn = el('td', 'n'); tn.append(note);
+    tr.append(tdN, tq, tc, tn);
+    function paint() { qty.classList.toggle('has', r.qty > 0); tr.classList.toggle('zero', !(r.qty > 0)); }
+    paint();
+    return tr;
+  }
+
+  function fillList(b) {
+    const dl = $('dl'); dl.textContent = '';
+    for (const g of catalog) if (b.cats.includes(g.cat)) dl.append(new Option(g.name));
+  }
+
+  function render() {
+    const grid = $('grid'); grid.textContent = '';
+    for (const col of LAYOUT) {
+      const c = el('div', 'col');
+      for (const b of col) {
+        const box = el('section', 'blk');
+        const h = el('h2', null, b.t); box.append(h);
+        const tbl = el('table');
+        const hr = el('tr'); [['종류', ''], ['수량', 'q'], ['챙김', 'c'], ['NOTE', 'n']].forEach(([t, k]) => hr.append(el('th', k, t)));
+        const thead = el('thead'); thead.append(hr);
+        const tb = el('tbody'); tbl.append(thead, tb); box.append(tbl);
+        let mine = rows.filter((r) => blockOfRow(r) === b);
+        if (b.fixed) {
+          let list = catalog.filter((g) => b.cats.includes(g.cat) && !(b.skip || []).includes(g.name));
+          if (b.order) list = list.map((g, i) => [g, i]).sort((x, y) => (b.order(x[0]) - b.order(y[0])) || (x[1] - y[1])).map((x) => x[0]);
+          for (const g of list) {
+            let r = mine.find((x) => x.gear === g.id);
+            if (!r) { r = { key: ++seq, gear: g.id, qty: 0, checked: false, note: '' }; rows.push(r); }
+            tb.append(rowEl(r, b));
+          }
+          for (const r of mine.filter((x) => !list.some((g) => g.id === x.gear))) tb.append(rowEl(r, b));
+        } else {
+          for (const r of mine) tb.append(rowEl(r, b));
+          const add = el('button', 'add', '+ 추가');
+          add.disabled = !eventId;
+          add.addEventListener('click', () => {
+            const r = { key: ++seq, gear: null, block: b.k, text: '', qty: 0, checked: false, note: '' }; rows.push(r);
+            const tr = rowEl(r, b); tb.append(tr); tr.querySelector('input').focus();
+          });
+          box.append(add);
+        }
+        if (!eventId) box.querySelectorAll('input').forEach((i) => { i.disabled = true; });
+        c.append(box);
+      }
+      grid.append(c);
+    }
+    updateSum();
+  }
+
+  function updateSum() {
+    const used = rows.filter((r) => r.qty > 0);
+    const done = used.filter((r) => r.checked).length;
+    $('sum').textContent = eventId && used.length ? `챙김 ${done} / ${used.length}종` : '';
+    const ev = events.find((e) => e.id === eventId);
+    document.title = ev ? `행사준비목록 · ${ev.title}` : '행사준비목록';
+  }
+
+  $('event').addEventListener('change', (e) => openEvent(e.target.value));
+  $('reload').addEventListener('click', () => eventId && openEvent(eventId));
+  $('print').addEventListener('click', () => window.print());
+  init();
+})();
+</script>
+</body>
+</html>

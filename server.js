@@ -81,8 +81,8 @@ function sendError(res, code, extra = {}) {
 function setSecurityHeaders(res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Content-Security-Policy',
-    "frame-ancestors 'self' https://www.notion.so https://notion.so https://*.notion.site https://*.notion.com https://notion.com");
+  // 임베드 제한 없음: 휴대폰 Notion 앱은 앱 내부 주소(웹 주소가 아님)에서 화면을 띄우기 때문에
+  // frame-ancestors로 노션 웹 주소만 허용하면 앱에서 빈칸이 됩니다. 보기 전용 화면이라 제한하지 않습니다.
 }
 
 // 실제 접속자 IP (Render 등 프록시 뒤). 가장 오른쪽 값이 프록시가 붙인 실제 IP입니다.

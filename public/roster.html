@@ -34,14 +34,19 @@ th.sat,td.sat{background:#f6f9ff}th.sun,td.sun{background:#fff7f7}
 thead th.sat small,thead th.sat{color:#316abc}thead th.sun small,thead th.sun{color:#d64949}
 th.today{background:#225bc8!important;color:#fff!important}th.today small{color:#dfe8ff!important}
 td.today{box-shadow:inset 2px 0 0 #225bc8,inset -2px 0 0 #225bc8}
-.name{position:sticky;left:0;z-index:1;background:#f7f9fc;font-weight:700;white-space:nowrap;min-width:64px;text-align:left}
-thead .name{z-index:3}
-tr.ev td,tr.ev .name{background:#fbfcfe}
+/* 왼쪽 고정 칸: 이름 | 근무 | 휴무 (좌우로 밀어도 항상 보임) */
+:root{--nameW:64px;--sumW:40px}
+.name,.sum{position:sticky;z-index:1;background:#f7f9fc;white-space:nowrap}
+.name{left:0;width:var(--nameW);min-width:var(--nameW);max-width:var(--nameW);font-weight:700;text-align:left;vertical-align:middle}
+.sum{width:var(--sumW);min-width:var(--sumW);max-width:var(--sumW);text-align:center;font-weight:700;vertical-align:middle}
+.sum.w{left:var(--nameW)}
+.sum.o{left:calc(var(--nameW) + var(--sumW));box-shadow:2px 0 0 #c9d2de}   /* 고정 칸 경계선 */
+td.sum.w{color:#1f5f8f}td.sum.o{color:#b42318}
+thead .name,thead .sum{z-index:3}
+tr.ev td,tr.ev .name,tr.ev .sum{background:#fbfcfe}
 tr.ev .name{color:#59677d}
 tr.sep td,tr.sep th{padding:0;height:4px;background:#dbe1e9;border:0}
 td.d{min-width:96px;max-width:130px}
-td.sum{text-align:center;font-weight:700;white-space:nowrap;min-width:42px;vertical-align:middle}
-th.sum{min-width:42px}
 .chip{display:block;padding:2px 4px;margin:0 0 2px;border-radius:4px;line-height:1.25;overflow-wrap:anywhere;word-break:keep-all;text-decoration:none;color:inherit}
 .off{display:block;padding:2px 4px;border-radius:4px;background:#fde2e1;color:#b42318;font-weight:700;text-align:center;margin:0 0 2px}
 /* 업무속성 색 (달력과 같음) */
@@ -60,7 +65,7 @@ th.sum{min-width:42px}
   body{padding:8px;padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
   table{font-size:11px}
   td.d{min-width:84px}
-  .name{min-width:52px}
+  :root{--nameW:50px;--sumW:32px}
   .bar{gap:4px}.bar button{padding:7px 9px}.month{min-width:86px}
   .wrap{max-height:calc(100vh - 140px)}
 }
@@ -141,34 +146,34 @@ th.sum{min-width:42px}
     const dayCls = (d) => { const w = new Date(d + 'T00:00:00Z').getUTCDay(); return (w === 6 ? 'sat' : w === 0 ? 'sun' : '') + (d === today ? ' today' : ''); };
 
     const thead = el('thead'), hr = el('tr');
-    hr.append(el('th', 'name', '구분'));
+    hr.append(el('th', 'name', '구분'), el('th', 'sum w', '근무'), el('th', 'sum o', '휴무'));
     for (const d of data.days) {
       const th = el('th', dayCls(d), String(Number(d.slice(8))) + '일');
       th.append(el('small', '', DOW[new Date(d + 'T00:00:00Z').getUTCDay()]));
       th.dataset.day = d;
       hr.append(th);
     }
-    hr.append(el('th', 'sum', '근무'), el('th', 'sum', '휴무'));
     thead.append(hr);
 
     const tbody = el('tbody');
     // 행사 줄
     const ev = el('tr', 'ev');
-    ev.append(el('th', 'name', '행사'));
+    ev.append(el('th', 'name', '행사'), el('td', 'sum w', ''), el('td', 'sum o', ''));
     for (const d of data.days) {
       const td = el('td', 'd ' + dayCls(d));
       for (const c of data.events[d] || []) td.append(chipEl(c));
       if (!(data.events[d] || []).length && (data.offNotes[d] || []).some((t) => /전체휴무|전직원휴무|전원휴무/.test(t))) td.append(el('span', 'off', '전체휴무'));
       ev.append(td);
     }
-    ev.append(el('td', 'sum', ''), el('td', 'sum', ''));
     tbody.append(ev);
-    const sep = el('tr', 'sep'); sep.append(el('th', 'name')); for (let k = 0; k < data.days.length + 2; k++) sep.append(el('td')); tbody.append(sep);
+    const sep = el('tr', 'sep'); sep.append(el('th', 'name'), el('td', 'sum w'), el('td', 'sum o')); for (let k = 0; k < data.days.length; k++) sep.append(el('td')); tbody.append(sep);
 
-    // 직원 줄
+    // 직원 줄: 이름 | 근무일수 | 휴무일수 | 날짜들
     for (const s of data.staff) {
       const tr = el('tr');
-      tr.append(el('th', 'name', s.name));
+      tr.append(el('th', 'name', s.name),
+        el('td', 'sum w', s.workDays == null ? '' : String(s.workDays)),
+        el('td', 'sum o', s.offDays == null ? '' : String(s.offDays)));
       for (const d of data.days) {
         const td = el('td', 'd ' + dayCls(d));
         const c = s.cells[d];
@@ -178,7 +183,6 @@ th.sum{min-width:42px}
         }
         tr.append(td);
       }
-      tr.append(el('td', 'sum', s.workDays == null ? '' : String(s.workDays)), el('td', 'sum', s.offDays == null ? '' : String(s.offDays)));
       tbody.append(tr);
     }
     tbl.replaceChildren(thead, tbody);
@@ -189,7 +193,8 @@ th.sum{min-width:42px}
       scrolledFor = month;
       const th = tbl.querySelector('th.today');
       const wrap = $('wrap');
-      wrap.scrollLeft = th ? Math.max(0, th.offsetLeft - tbl.querySelector('thead .name').offsetWidth - 8) : 0;
+      const fixedW = [...tbl.querySelectorAll('thead .name, thead .sum')].reduce((n, e) => n + e.offsetWidth, 0);
+      wrap.scrollLeft = th ? Math.max(0, th.offsetLeft - fixedW - 8) : 0;
     }
   }
 

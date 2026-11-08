@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>오늘 날짜와 한국 시간 · 열린기획</title>
+<style>
+:root{color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#173d32;background:transparent;-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}
+body{margin:0;min-height:100svh;display:grid;place-items:center;padding:8px}
+.clock{width:min(100%,760px);padding:20px 26px;background:#f2f7f3;border:1px solid #d6e5d9;border-radius:18px;display:flex;align-items:center;justify-content:space-between;gap:22px}
+.label{font-size:11px;letter-spacing:.12em;color:#587363;font-weight:600;margin:0 0 8px}
+.date{font-size:clamp(18px,3.1vw,25px);line-height:1.5;font-weight:700;letter-spacing:-.5px;margin:0;word-break:keep-all}
+.weekday{color:#536e5d}
+.time-wrap{white-space:nowrap;flex-shrink:0;display:flex;align-items:baseline;gap:7px;font-variant-numeric:tabular-nums}
+.time{font-size:clamp(42px,8vw,68px);font-weight:750;letter-spacing:-2px;line-height:1.08}
+.seconds{font-size:22px;color:#688170;font-weight:500;min-width:28px}
+@media(max-width:540px){.clock{display:block;text-align:center;padding:18px 10px;border-radius:14px}.label{font-size:10px;margin-bottom:7px}.date{font-size:20px}.time-wrap{justify-content:center;margin-top:8px}.time{font-size:58px;letter-spacing:-1.5px}.seconds{font-size:23px}}
+@media(max-height:190px){body{padding:4px}.clock{padding-top:12px;padding-bottom:12px}.label{margin-bottom:4px}.time-wrap{margin-top:4px}.time{font-size:48px}.date{font-size:18px}}
+@media(prefers-color-scheme:dark){.clock{background:#183529;border-color:#355642}body{color:#e8f2e9}.label,.weekday,.seconds{color:#b4cdb9}}
+</style>
+</head>
+<body>
+<main class="clock" aria-label="한국 시간 기준 현재 날짜와 시간">
+  <div>
+    <p class="label">오늘 · 한국 시간</p>
+    <p class="date"><span id="date"></span> <span class="weekday" id="weekday"></span></p>
+  </div>
+  <div class="time-wrap" role="timer" aria-live="off"><time class="time" id="time"></time><span class="seconds" id="seconds" aria-label="초"></span></div>
+  <noscript>시간을 표시하려면 JavaScript를 켜 주세요.</noscript>
+</main>
+<script>
+// 서버 없이 기기 시계로 동작하며, 기기 시간대와 상관없이 한국 시간으로 표시합니다.
+const zone = 'Asia/Seoul';
+const dateFormat = new Intl.DateTimeFormat('ko-KR', { timeZone: zone, year: 'numeric', month: 'long', day: 'numeric' });
+const weekdayFormat = new Intl.DateTimeFormat('ko-KR', { timeZone: zone, weekday: 'long' });
+const timeFormat = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+function tick() {
+  const now = new Date(), parts = timeFormat.formatToParts(now), get = (t) => parts.find((p) => p.type === t).value;
+  document.getElementById('date').textContent = dateFormat.format(now);
+  document.getElementById('weekday').textContent = weekdayFormat.format(now);
+  const time = document.getElementById('time');
+  time.textContent = get('hour') + ':' + get('minute');
+  time.dateTime = now.toISOString();
+  document.getElementById('seconds').textContent = get('second');
+}
+tick();
+setInterval(tick, 1000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+</script>
+</body>
+</html>

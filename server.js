@@ -37,6 +37,7 @@ const AUTH_ENABLED = CALENDAR_PASSWORD.length > 0;
 
 const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
 const ROSTER_HTML = fs.readFileSync(path.join(__dirname, 'public', 'roster.html'));
+const CLOCK_HTML = fs.readFileSync(path.join(__dirname, 'public', 'clock.html'));
 
 // ── 공통 도구 ───────────────────────────────────────────────────────
 class AppError extends Error { constructor(code) { super(code); this.code = code; } }
@@ -372,6 +373,11 @@ async function handle(req, res) {
     const body = await readJson(req);
     if (typeof body.password !== 'string' || !safeEqual(body.password, CALENDAR_PASSWORD)) return sendError(res, 'BAD_PASSWORD');
     return sendJson(res, 200, issueToken());
+  }
+
+  if (req.method === 'GET' && ['/clock', '/clock.html'].includes(url.pathname)) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    return res.end(CLOCK_HTML);
   }
 
   if (req.method === 'GET' && ['/roster', '/roster.html'].includes(url.pathname)) {

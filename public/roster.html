@@ -61,6 +61,29 @@ td.d{min-width:96px;max-width:130px}
 .c-pink{background:#f8e1ec;color:#9b2f67}
 .c-red{background:#fbdcdc;color:#a8231d}
 .hint{font-size:12px;color:#657185;margin:10px 0}
+.hidden{display:none!important}
+/* 이름 누르기 */
+.pick{all:unset;cursor:pointer;color:#1f4f9c;text-decoration:underline;text-underline-offset:3px;-webkit-tap-highlight-color:transparent}
+.pick:focus-visible{outline:3px solid #478ce1;outline-offset:2px;border-radius:3px}
+/* 개인 화면 */
+#person{background:#fff;border:1px solid #dbe1e9;border-radius:10px;padding:14px;max-width:720px}
+.p-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.p-head h2{margin:0;font-size:20px}
+.p-back{padding:7px 11px}
+.p-stats{display:flex;gap:8px;margin-bottom:14px}
+.p-stat{flex:1;border-radius:10px;padding:10px;text-align:center;font-size:13px;font-weight:600}
+.p-stat b{display:block;font-size:26px;line-height:1.2}
+.p-stat.w{background:#e7f1fb;color:#1f5f8f}.p-stat.o{background:#fde2e1;color:#b42318}
+.p-list{list-style:none;margin:0;padding:0}
+.p-list li{display:flex;gap:10px;padding:8px 2px;border-bottom:1px solid #eef1f5;align-items:flex-start}
+.p-list li.today{background:#f0f5ff;border-radius:8px;padding-left:6px}
+.p-list li.future .p-date{color:#6b7686}
+.p-date{flex:0 0 96px;font-weight:700;font-size:13px;padding-top:2px;white-space:nowrap}
+.p-date.sat{color:#316abc}.p-date.sun{color:#d64949}
+.p-items{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;font-size:13px}
+.p-items .chip,.p-items .off{display:inline-block;margin:0;text-align:left;padding:3px 7px;border-radius:6px}
+.p-empty{color:#6b7686;font-size:13px;padding:10px 0}
+.p-divider{font-size:12px;color:#6b7686;padding:10px 2px 2px;font-weight:700}
 @media(max-width:600px){
   body{padding:8px;padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
   table{font-size:11px}
@@ -86,7 +109,9 @@ td.d{min-width:96px;max-width:130px}
   <div id="status" role="status"></div>
   <div id="legend" aria-label="업무속성 색 안내"></div>
   <div class="wrap" id="wrap"><table id="tbl"></table></div>
-  <p class="hint">노션 「월간일정표」의 일정·근무자·휴무로 자동으로 만들어집니다. 오늘까지는 일정에 없는 직원도 휴무로 표시됩니다. 수정은 노션 월간일정표에서 해주세요.<br>
+  <section id="person" class="hidden" aria-live="polite"></section>
+  <p class="hint">이름을 누르면 그 직원의 한 달 일정만 모아 볼 수 있습니다.<br>
+  노션 「월간일정표」의 일정·근무자·휴무로 자동으로 만들어집니다. 오늘까지는 일정에 없는 직원도 휴무로 표시됩니다. 수정은 노션 월간일정표에서 해주세요.<br>
   표를 좌우로 밀어서 날짜를 볼 수 있습니다. 화면을 열어두면 5분마다 최신 내용을 확인합니다.</p>
 </main>
 <script>
@@ -112,9 +137,20 @@ td.d{min-width:96px;max-width:130px}
   const minIdx = () => idx(START), maxIdx = () => (kstNow().getUTCFullYear() + 1) * 12 + 11;   // 내년 12월까지
   const clampMonth = (m) => fromIdx(Math.min(maxIdx(), Math.max(minIdx(), idx(m))));
 
-  const qs = new URLSearchParams(location.search).get('month');
+  const params = new URLSearchParams(location.search);
+  const qs = params.get('month');
   let month = clampMonth(/^\d{4}-\d{2}$/.test(qs || '') ? qs : curMonth());
+  let person = (params.get('staff') || '').trim().slice(0, 20) || null;   // 개인 화면으로 보고 있는 직원
   let data = null, inflight = null, lastAttempt = 0, lastError = null, scrolledFor = null;
+
+  function syncUrl() {
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set('month', month);
+      if (person) u.searchParams.set('staff', person); else u.searchParams.delete('staff');
+      history.replaceState(null, '', u);
+    } catch {}
+  }
 
   function loadCache() {
     try { const c = JSON.parse(store.get(cacheKey(month)) || 'null'); data = c && c.month === month ? c : null; } catch { data = null; }
@@ -140,6 +176,11 @@ td.d{min-width:96px;max-width:130px}
     const [y, m] = month.split('-').map(Number);
     $('month').textContent = `${y}년 ${m}월`;
     const tbl = $('tbl');
+    const staffRow = person && data ? data.staff.find((s) => s.name === person) : null;
+    if (person && data && !staffRow) person = null;   // 없는 이름이면 전체 표로
+    $('wrap').classList.toggle('hidden', !!person);
+    $('person').classList.toggle('hidden', !person);
+    if (person) { renderPerson(staffRow); renderLegend(); return; }
     if (!data) { tbl.replaceChildren(); renderLegend(); return; }
 
     const today = todayKey();
@@ -171,7 +212,12 @@ td.d{min-width:96px;max-width:130px}
     // 직원 줄: 이름 | 근무일수 | 휴무일수 | 날짜들
     for (const s of data.staff) {
       const tr = el('tr');
-      tr.append(el('th', 'name', s.name),
+      const nameTh = el('th', 'name');
+      const pick = el('button', 'pick', s.name);
+      pick.type = 'button'; pick.title = `${s.name}님 일정만 보기`;
+      pick.onclick = () => openPerson(s.name);
+      nameTh.append(pick);
+      tr.append(nameTh,
         el('td', 'sum w', s.workDays == null ? '' : String(s.workDays)),
         el('td', 'sum o', s.offDays == null ? '' : String(s.offDays)));
       for (const d of data.days) {
@@ -196,6 +242,54 @@ td.d{min-width:96px;max-width:130px}
       const fixedW = [...tbl.querySelectorAll('thead .name, thead .sum')].reduce((n, e) => n + e.offsetWidth, 0);
       wrap.scrollLeft = th ? Math.max(0, th.offsetLeft - fixedW - 8) : 0;
     }
+  }
+
+  // 개인 화면: 이름 · 근무/휴무 일수 · 날짜별 목록(근무 또는 휴무가 있는 날만)
+  function renderPerson(s) {
+    const box = $('person');
+    const head = el('div', 'p-head');
+    const back = el('button', 'p-back', '← 전체 표');
+    back.type = 'button'; back.onclick = closePerson;
+    head.append(back, el('h2', '', person));
+    const frag = [head];
+    if (!s) { frag.push(el('p', 'p-empty', '불러오는 중…')); box.replaceChildren(...frag); return; }
+
+    if (s.workDays != null) {
+      const stats = el('div', 'p-stats');
+      const w = el('div', 'p-stat w'); w.append(el('b', '', String(s.workDays)), document.createTextNode('근무일'));
+      const o = el('div', 'p-stat o'); o.append(el('b', '', String(s.offDays)), document.createTextNode('휴무일'));
+      stats.append(w, o);
+      frag.push(stats);
+    }
+
+    const today = todayKey();
+    const list = el('ul', 'p-list');
+    let shown = 0, dividerDone = false;
+    for (const d of data.days) {
+      const c = s.cells[d];
+      if (!c || (!c.work.length && !c.off)) continue;
+      if (!dividerDone && d > today && shown) { list.append(el('li', 'p-divider', '앞으로 예정')); }
+      if (d > today) dividerDone = true;
+      const dt = new Date(d + 'T00:00:00Z'), w = dt.getUTCDay();
+      const li = el('li', (d === today ? 'today' : d > today ? 'future' : ''));
+      li.append(el('div', 'p-date' + (w === 6 ? ' sat' : w === 0 ? ' sun' : ''), `${dt.getUTCMonth() + 1}/${dt.getUTCDate()} (${DOW[w]})${d === today ? ' 오늘' : ''}`));
+      const items = el('div', 'p-items');
+      if (c.off) items.append(el('span', 'off', '휴무'));
+      for (const x of c.work) items.append(chipEl(x));
+      li.append(items);
+      list.append(li);
+      shown++;
+    }
+    frag.push(shown ? list : el('p', 'p-empty', '이 달에 표시할 근무나 휴무가 없습니다.'));
+    box.replaceChildren(...frag);
+  }
+
+  function openPerson(name) {
+    person = name; syncUrl(); render();
+    try { $('person').scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch {}
+  }
+  function closePerson() {
+    person = null; scrolledFor = null; syncUrl(); render();
   }
 
   function renderLegend() {
@@ -248,7 +342,7 @@ td.d{min-width:96px;max-width:130px}
 
   function go(m) {
     month = clampMonth(m);
-    try { const u = new URL(location.href); u.searchParams.set('month', month); history.replaceState(null, '', u); } catch {}
+    syncUrl();
     lastError = null;
     loadCache(); render(); showStatus(); refresh();
   }

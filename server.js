@@ -25,6 +25,8 @@ const NOTION_TIMEOUT_MS = 10 * 1000;
 const MAX_PAGES = 20;                        // 최대 2,000건
 const TOKEN_DAYS = 30;                       // 암호 입력 후 30일 동안 다시 묻지 않음
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+// CALENDAR_PASSWORD를 비워두면 암호 없이 누구나 볼 수 있습니다(보기 전용). 값을 넣으면 암호 화면이 다시 켜집니다.
+const AUTH_ENABLED = CALENDAR_PASSWORD.length > 0;
 
 const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
 
@@ -35,7 +37,7 @@ const ERRORS = {
   BAD_PASSWORD:      [401, '캘린더 암호가 맞지 않습니다.'],
   AUTH_REQUIRED:     [401, '암호를 다시 입력해 주세요.'],
   TOO_MANY:          [429, '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.'],
-  NOT_CONFIGURED:    [503, '서버 설정(NOTION_API_KEY / CALENDAR_PASSWORD)이 필요합니다.'],
+  NOT_CONFIGURED:    [503, '서버 설정(NOTION_API_KEY)이 필요합니다.'],
   NOTION_AUTH:       [502, '노션 연결 키가 유효하지 않습니다. 관리자에게 알려 주세요.'],
   NOTION_NOT_SHARED: [502, '노션 데이터베이스에 연결(통합) 권한이 없습니다. 관리자에게 알려 주세요.'],
   NOTION_RATE_LIMIT: [503, '노션 요청 한도를 잠시 초과했습니다. 곧 자동으로 다시 시도합니다.'],
@@ -234,7 +236,8 @@ async function handle(req, res) {
 
   if (req.method === 'POST' && url.pathname === '/api/login') {
     if (limited(`login:${ip}`, 10, 60 * 1000) || limited('login:all', 100, 10 * 60 * 1000)) return sendError(res, 'TOO_MANY');
-    if (!CALENDAR_PASSWORD || !NOTION_API_KEY) return sendError(res, 'NOT_CONFIGURED');
+    if (!AUTH_ENABLED) return sendJson(res, 200, { open: true });
+    if (!NOTION_API_KEY) return sendError(res, 'NOT_CONFIGURED');
     const body = await readJson(req);
     if (typeof body.password !== 'string' || !safeEqual(body.password, CALENDAR_PASSWORD)) return sendError(res, 'BAD_PASSWORD');
     return sendJson(res, 200, issueToken());
@@ -242,8 +245,8 @@ async function handle(req, res) {
 
   if (req.method === 'GET' && url.pathname === '/api/events') {
     if (limited(`events:${ip}`, 60, 60 * 1000)) return sendError(res, 'TOO_MANY');
-    if (!CALENDAR_PASSWORD || !NOTION_API_KEY) return sendError(res, 'NOT_CONFIGURED');
-    if (!verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
+    if (!NOTION_API_KEY) return sendError(res, 'NOT_CONFIGURED');
+    if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
     try {
       return sendJson(res, 200, await getEvents());
     } catch (e) {
@@ -267,5 +270,6 @@ const server = http.createServer((req, res) => {
 });
 server.listen(PORT, () => {
   console.log(`Yeollin calendar v2 running on :${PORT}`);
-  if (!NOTION_API_KEY || !CALENDAR_PASSWORD) console.warn('⚠ NOTION_API_KEY 또는 CALENDAR_PASSWORD 환경변수가 없습니다.');
+  if (!NOTION_API_KEY) console.warn('⚠ NOTION_API_KEY 환경변수가 없습니다.');
+  console.log(AUTH_ENABLED ? '암호 사용: 켜짐' : '암호 사용: 꺼짐 (누구나 보기 가능)');
 });

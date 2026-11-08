@@ -194,7 +194,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
       s.textContent = data ? `⚠ ${lastError} · 저장된 일정(${dateTimeText(data.fetchedAt)} 기준)을 표시 중입니다.` : lastError;
       return;
     }
-    if (!data) { s.textContent = token ? '' : '암호를 입력하면 노션에서 일정을 읽어옵니다.'; return; }
+    if (!data) { s.textContent = $('gate').classList.contains('hidden') ? '' : '암호를 입력하면 노션에서 일정을 읽어옵니다.'; return; }
     if (data.stale) { s.className = 'warn'; s.textContent = `⚠ ${data.warningMessage || '노션 연결이 원활하지 않습니다.'} · ${dateTimeText(data.fetchedAt)} 기준 일정입니다.`; return; }
     s.textContent = `일정 ${data.events.length}건 · ${timeText(data.fetchedAt)} 기준`;
   }
@@ -216,14 +216,15 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   }
 
   // 같은 시간에 여러 번 눌러도 요청은 하나만 나갑니다.
+  // 암호가 꺼진 서버면 토큰 없이 바로 조회되고, 켜진 서버면 401을 받아 암호 칸을 보여줍니다.
   function refresh() {
-    if (!token) { showGate(); showStatus(); return Promise.resolve(); }
     if (inflight) return inflight;
     lastAttempt = Date.now();
     showStatus('loading');
     inflight = (async () => {
       try {
-        const d = await callApi('/api/events', { headers: { Authorization: 'Bearer ' + token } });
+        const d = await callApi('/api/events', { headers: token ? { Authorization: 'Bearer ' + token } : {} });
+        $('gate').classList.add('hidden');
         lastError = null;
         if (!d.stale || !data || Date.parse(d.fetchedAt) >= Date.parse(data.fetchedAt)) {
           setData(d);
@@ -232,9 +233,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
         render();
       } catch (e) {
         if (e.status === 401) {                         // 암호 변경·만료 → 다시 입력 (표시 중인 일정은 유지)
+          const hadToken = !!token;
           token = null; store.del(TOKEN_KEY);
           lastError = null;
-          showGate('암호를 다시 입력해 주세요.');
+          showGate(hadToken ? '암호를 다시 입력해 주세요.' : '');
         } else {
           lastError = e.message || '일정을 불러오지 못했습니다.';
         }
@@ -251,8 +253,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
     $('gateMsg').textContent = '';
     try {
       const t = await callApi('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
-      token = t.token;
-      store.set(TOKEN_KEY, JSON.stringify(t));   // 암호 자체는 저장하지 않고, 30일짜리 출입 토큰만 저장
+      if (t.token) {
+        token = t.token;
+        store.set(TOKEN_KEY, JSON.stringify(t));   // 암호 자체는 저장하지 않고, 30일짜리 출입 토큰만 저장
+      }
       $('password').value = '';
       $('gate').classList.add('hidden');
       await refresh();
@@ -280,7 +284,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   // ── 시작: 저장된 일정 먼저 표시 → 최신 일정 조회 ──
   render();
   showStatus();
-  if (token) refresh(); else showGate();
+  refresh();
 })();
 </script>
 </body>

@@ -11,8 +11,7 @@ services:
     envVars:
       - key: NOTION_API_KEY        # 노션 통합 비밀키 — 배포 화면에서 직접 입력
         sync: false
-      - key: CALENDAR_PASSWORD     # 직원용 달력 암호 — 배포 화면에서 직접 입력
-        sync: false
+      # 암호가 필요해지면 Render 환경변수에 CALENDAR_PASSWORD 를 추가하세요(비워두면 누구나 보기 가능).
       - key: TOKEN_SECRET          # 자동 생성
         generateValue: true
       - key: NOTION_DATA_SOURCE_ID

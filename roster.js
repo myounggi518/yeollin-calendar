@@ -28,7 +28,7 @@ const OFF_WORD = '휴무';
 // 오늘(한국시간)까지, 그날 어떤 일정에도 없는 직원은 자동으로 휴무 표시. 아래 직원은 자동 휴무에서 제외
 const AUTO_OFF_EXCLUDE = ['이득영', '김광헌'];
 // 근무일수·휴무일수를 세지 않는(빈칸으로 두는) 직원
-const NO_COUNT = ['김광헌'];
+const NO_COUNT = ['이득영', '김광헌'];
 
 // 긴 이름부터 찾아서 지움 → '이이사'가 '이사'로 두 번 잡히는 일 등을 막음
 const ALIAS_LIST = STAFF.flatMap((s) => s.aliases.map((a) => [a, s.name])).sort((a, b) => b[0].length - a[0].length);

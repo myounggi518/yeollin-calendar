@@ -112,7 +112,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
       { k: 'iem', t: '인이어', cats: ['인이어'], pick: 1 },
       { k: 'etc', t: '기타 장비 (스플리터·아비옴·녹음·호이스트·우천 등)', cats: ['기타', '우천'], pick: 1 } ],
     [ { k: 'radio', t: '무전기 + 인터컴', cats: ['무전기'], pick: 1 },
-      { k: 'elec', t: '전기시스템 + 메인선', cats: ['전기'], pick: 1 },
+      { k: 'elec', t: '전기시스템 + 메인선', cats: ['전기'], pick: 1, skip: ['메인파워랙-4'] },
       { k: 'a32', t: '32A 케이블', cats: ['32A'], fixed: 1, skip: ['16A 변환'] },
       { k: 'multi', t: '멀티 케이블', cats: ['멀티'], fixed: 1 } ],
     [ { k: 'xlr', t: 'XLR', cats: ['XLR'], fixed: 1 },
@@ -147,7 +147,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
       { k: 'vva', t: "CABLE · Gloshine VA", cats: ["Gloshine VA"], fixed: 1 },
       { k: 'vpp', t: "POWER PACK", cats: ["POWER PACK"], fixed: 1 },
       // 음향 화면과 같은 장비 종류지만, 영상 화면에서 넣은 줄은 「구분: 영상」으로 따로 저장됨
-      { k: 'velec', t: '전기시스템 + 메인선', cats: ['전기'], pick: 1 },
+      { k: 'velec', t: '전기시스템 + 메인선', cats: ['전기'], pick: 1, skip: ['3상파워팩', '단상파워팩'] },
       { k: 'v32a', t: '32A 케이블', cats: ['32A'], fixed: 1, skip: ['16A 변환'] } ],
     [ { k: 'vlan', t: "LAN", cats: ["LAN"], fixed: 1 },
       { k: 'vopt', t: "OPTI CABLE", cats: ["OPTI CABLE"], fixed: 1 },
@@ -175,7 +175,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     vnb: ["LG gram", "samsung", "OMEN", "LG 노트북"],
     vmon: ["24\"", "32\"", "중계모니터", "삼성모니터"],
     vtv: ["43\"", "55\"", "75\""],
-    velec: A_ORDER.elec,
+    velec: ['메인파워랙-1', '메인파워랙-2', '메인파워랙-3', '메인파워랙-4', ...A_ORDER.elec],
     v32a: A_ORDER.a32,
   };
   const LAYOUT = VIDEO ? V_LAYOUT : A_LAYOUT, ORDER = VIDEO ? V_ORDER : A_ORDER;
@@ -282,7 +282,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
       inp.addEventListener('focus', () => fillList(b));
       inp.addEventListener('change', () => {
         const v = inp.value.trim();
-        const g = catalog.find((x) => b.cats.includes(x.cat) && (x.name === v || x.full === v));
+        const g = catalog.find((x) => b.cats.includes(x.cat) && !(b.skip || []).includes(x.name) && (x.name === v || x.full === v));
         if (g) { r.gear = g.id; r.text = ''; inp.value = g.name; } else { r.gear = null; r.text = v; r.block = b.k; }
         if (!r.qty && v) qty.focus();   // 수량은 비워 두고 바로 수량칸으로 이동
         queueSave(r, tr); paint();
@@ -312,7 +312,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 
   function fillList(b) {
     const dl = $('dl'); dl.textContent = '';
-    let list = catalog.filter((g) => b.cats.includes(g.cat));
+    let list = catalog.filter((g) => b.cats.includes(g.cat) && !(b.skip || []).includes(g.name));
     if (b.order) list = list.map((g, i) => [g, i]).sort((x, y) => (b.order(x[0]) - b.order(y[0])) || (x[1] - y[1])).map((x) => x[0]);
     for (const g of list) dl.append(new Option(g.name));
   }

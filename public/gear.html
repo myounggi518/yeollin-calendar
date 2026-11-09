@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>행사준비목록</title>
+<title>음향장비 반출목록</title>
 <style>
 :root{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#15243b;background:#f4f7fb;-webkit-text-size-adjust:100%}
 *{box-sizing:border-box}
@@ -76,7 +76,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 </head>
 <body>
 <div class="top bar">
-  <h1 id="ttl">📦 행사준비목록</h1>
+  <h1 id="ttl">📦 음향장비 반출목록</h1>
   <select id="event" aria-label="일정 선택"><option>불러오는 중…</option></select>
   <b id="evname" hidden></b>
   <span class="sum" id="sum"></span>
@@ -312,7 +312,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     const done = used.filter((r) => r.checked).length;
     $('sum').textContent = eventId && used.length ? `챙김 ${done} / ${used.length}종` : '';
     const ev = events.find((e) => e.id === eventId);
-    document.title = ev ? `행사준비목록 · ${ev.title}` : '행사준비목록';
+    document.title = ev ? `음향장비 반출목록 · ${ev.title}` : '음향장비 반출목록';
   }
 
   $('event').addEventListener('change', (e) => openEvent(e.target.value));

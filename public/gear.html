@@ -293,7 +293,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
         if (!eventId) box.querySelectorAll('input').forEach((i) => { i.disabled = true; });
         // 휴대폰에서는 아직 넣은 게 없는 고정 칸(XLR·전원선 등 긴 목록)을 접어 둠. 머리글을 누르면 펼침
         const hasAny = rows.some((r) => blockOfRow(r) === b && r.qty > 0);
-        const fold = b.k in folded ? folded[b.k] : (isPhone() && b.fixed && !hasAny);
+        const fold = b.k in folded ? folded[b.k] : b.k !== 'main';   // 처음엔 MAIN SPEAKER + AMP만 펼침
         box.classList.toggle('fold', !!fold);
         c.append(box);
       }

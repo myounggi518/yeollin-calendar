@@ -390,7 +390,7 @@ async function handle(req, res) {
   }
 
   // ── 반출장비 ──
-  if (req.method === 'GET' && ['/gear', '/gear.html'].includes(url.pathname)) {
+  if (req.method === 'GET' && ['/gear', '/gear.html', '/vgear'].includes(url.pathname)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     return res.end(GEAR_HTML);
   }
@@ -412,7 +412,8 @@ async function handle(req, res) {
         return sendJson(res, 200, { rows: await gear.listRows(eventId) });
       }
       if (req.method === 'POST' && url.pathname === '/api/gear/reset') {
-        const n = await gear.resetEvent(eventId);
+        const body = await readJson(req, 64 * 1024);
+        const n = await gear.resetEvent(eventId, Array.isArray(body.pids) ? body.pids.slice(0, 500) : []);
         console.log(`반출장비 초기화: ${eventId} (${n}줄)`);
         return sendJson(res, 200, { ok: true, removed: n });
       }

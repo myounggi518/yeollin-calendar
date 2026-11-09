@@ -61,6 +61,8 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   .blk h2{font-size:15px;padding:11px 10px}
   .add{padding:12px}
   button{padding:9px 12px}
+  .bar button{padding:7px 9px;font-size:14px}
+  #evname{font-size:15px}
 }
 @media print{
   .blk.fold table{display:table!important}
@@ -96,7 +98,8 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 
   // 시트(행사준비목록) 배치 그대로: 4줄, 위→아래
   // fixed: 항목이 미리 깔려 수량만 채움 / pick: 「+ 추가」로 종류를 골라 넣음
-  const LAYOUT = [
+  const VIDEO = location.pathname.startsWith('/vgear');   // /vgear = 영상장비, /gear = 음향장비
+  const A_LAYOUT = [
     [ { k: 'main', t: 'MAIN SPEAKER + AMP', cats: ['메인', '앰프'], pick: 1 },
       { k: 'mon', t: 'Mon SPEAKER', cats: ['모니터'], pick: 1 },
       { k: 'spk', t: '스피커선', cats: ['스피커선'], fixed: 1 },
@@ -114,7 +117,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
       { k: 'stand', t: '마이크 & 스피커 스탠드', cats: ['스탠드'], fixed: 1, skip: ['보면대'] } ],
   ];
   // 시트 순서대로 정렬 (목록에 없는 새 장비는 맨 뒤)
-  const ORDER = {
+  const A_ORDER = {
     spk: ['NL8 47m', 'NL8 30m', 'NL8 20m', 'NL8 15m', 'NL8 1m', 'NL4 20m', 'NL4 15m', 'NL4 10m', 'NL4 5m', 'NL4 1.5m'],
     mon: ['MJF212', 'MJF210', 'VTX M20', 'SRX912', 'PRX612', 'PRX615', 'PRX715', 'CX8', 'SRX712', 'EON510', 'EON710', 'KRK'],
     con: ['PM5', 'RX+1608', 'Rpio', '3224', 'VI7000', 'VI7000 LOCAL', 'VI3000 no.1', 'VI3000 no.2', 'VI1', 'VI stage box', 'M32 no.1', 'M32 no.2', 'M32R', 'M32R live', 'DL16', '소형믹서', 'SSL fusion', 'maxxBCL', '광케이블'],
@@ -131,6 +134,46 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     ac: ['5m', '10m', '15m', '20m', '30m', '50m', '1구', '콘센트박스', 'power link 3m', 'power link 5m', 'power link 10m', 'Y케이블', 'AC케이블'],
     stand: ['스피커 스탠드', '마이크 스탠드 롱', '마이크 스탠드 숏', '박스(대)', '박스(소)1번', '박스(소)2번'],
   };
+  const V_LAYOUT = [
+    [ { k: 'vled', t: "LED", cats: ["LED"], fixed: 1, box: 1 },
+      { k: 'vcon', t: "CONSOLE", cats: ["영상콘솔"], fixed: 1 },
+      { k: 'vproc', t: "PROCESSOR", cats: ["PROCESSOR"], fixed: 1 },
+      { k: 'vopti', t: "OPTI", cats: ["OPTI"], fixed: 1 } ],
+    [ { k: 'vgp', t: "CABLE · Gloshine power", cats: ["Gloshine power"], fixed: 1 },
+      { k: 'vdp', t: "CABLE · Dicolor power", cats: ["Dicolor power"], fixed: 1 },
+      { k: 'vva', t: "CABLE · Gloshine VA", cats: ["Gloshine VA"], fixed: 1 },
+      { k: 'vpp', t: "POWER PACK", cats: ["POWER PACK"], fixed: 1 } ],
+    [ { k: 'vlan', t: "LAN", cats: ["LAN"], fixed: 1 },
+      { k: 'vopt', t: "OPTI CABLE", cats: ["OPTI CABLE"], fixed: 1 },
+      { k: 'vhdmi', t: "HDMI", cats: ["HDMI"], fixed: 1 },
+      { k: 'vsdi', t: "SDI", cats: ["SDI"], fixed: 1 } ],
+    [ { k: 'vetc', t: "ETC", cats: ["영상ETC"], fixed: 1 },
+      { k: 'vnb', t: "노트북", cats: ["노트북"], fixed: 1, add: 1 },
+      { k: 'vmon', t: "MONITOR", cats: ["MONITOR"], fixed: 1, add: 1 },
+      { k: 'vtv', t: "TV", cats: ["TV"], fixed: 1, add: 1 } ],
+  ];
+  const V_ORDER = {
+    vled: ["Dicolor 4mm 빨강 500*500", "Dicolor 4mm 빨강 500*1000", "Dicolor 4mm 파랑 500*500", "Dicolor 4mm 파랑 500*1000", "Dicolor 4mm 노랑 500*500", "Dicolor 4mm 노랑 500*1000", "Dicolor 3mm 500*500", "Gloshine VA 1000*500", "Gloshine 3mm 500*500", "Gloshine 3mm 500*1000"],
+    vcon: ["PIXELHUE U5", "PIXELHUE P20", "J6", "C1", "N9", "ks 928"],
+    vproc: ["MCTR660", "Vx16s", "Vx1000", "MCTR 4k"],
+    vopti: ["광DVI 은색", "광DVI 검정", "지빅"],
+    vgp: ["POWER S", "POWER L", "POWER 10m", "POWER 15m", "POWER 20m"],
+    vdp: ["POWER 5m", "POWER 10m", "POWER 20m", "3MM POWER 10m", "3MM POWER 20m"],
+    vva: ["RAN S", "RAN L", "POWER S", "POWER L"],
+    vpp: ["MAIN POWER", "9구 파워팩", "12구 파워팩", "18구 파워팩"],
+    vlan: ["Gloshine S", "Gloshine L", "1.2m", "10m", "20m", "30m", "50m", "100m"],
+    vopt: ["4p 30m", "4p 50m", "4p 110m", "4p 140m", "4p 200m", "8p 110m", "8p 140m"],
+    vhdmi: ["10m", "20m"],
+    vsdi: ["30m", "80m", "100m"],
+    vetc: ["HDMI 분배기", "크로스컨버터", "외장형 캡쳐카드", "HDMI Extender", "CUE", "스위쳐"],
+    vnb: ["LG gram", "samsung", "OMEN", "LG 노트북"],
+    vmon: ["24\"", "32\"", "중계모니터", "삼성모니터"],
+    vtv: ["43\"", "55\"", "75\""],
+  };
+  const LAYOUT = VIDEO ? V_LAYOUT : A_LAYOUT, ORDER = VIDEO ? V_ORDER : A_ORDER;
+  const OPEN = VIDEO ? 'vled' : 'main', TITLE = VIDEO ? '영상장비 반출목록' : '음향장비 반출목록';
+  document.title = TITLE; $('ttl').textContent = (VIDEO ? '🎬 ' : '📦 ') + TITLE;
+  const has = (r) => r.qty > 0 || r.box > 0;
   for (const col of LAYOUT) for (const b of col) if (ORDER[b.k]) b.order = (g) => { const i = ORDER[b.k].indexOf(g.name); return i < 0 ? 999 : i; };
   const BLOCKS = LAYOUT.flat();
   const blockOfCat = {}; BLOCKS.forEach((b) => b.cats.forEach((c) => { blockOfCat[c] = b; }));
@@ -171,7 +214,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
         // 일정 페이지 안에 붙인 화면: 행사가 정해져 있으므로 선택칸 대신 행사 이름만 표시
         sel.value = want; sel.hidden = true; $('ttl').hidden = true;
         const ev = events.find((e) => e.id === want);
-        $('evname').textContent = `📦 ${fmtDate(ev.startDate)}${ev.endDate !== ev.startDate ? '~' + fmtDate(ev.endDate) : ''} ${ev.title}`;
+        $('evname').textContent = `${VIDEO ? '🎬' : '📦'} ${fmtDate(ev.startDate)}${ev.endDate !== ev.startDate ? '~' + fmtDate(ev.endDate) : ''} ${ev.title}`;
         $('evname').hidden = false;
       }
       if (sel.value) await openEvent(sel.value); else { status('위에서 일정을 고르면 그 일정의 준비목록이 열립니다.'); render(); }
@@ -194,7 +237,8 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 
   function blockOfRow(r) {
     if (r.gear) { const g = byId[r.gear]; return g ? blockOfCat[g.cat] : null; }
-    return BLOCKS.find((b) => b.k === r.block) || BLOCKS.find((b) => b.k === 'etc');
+    if (!r.block) return VIDEO ? null : BLOCKS.find((b) => b.k === 'etc');
+    return BLOCKS.find((b) => b.k === r.block) || null;
   }
 
   // ── 저장 (줄마다 순서대로, 입력이 멈추면 0.6초 뒤) ──
@@ -210,7 +254,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   async function doSave(r, tr) {
     tr.classList.add('saving'); tr.classList.remove('failed');
     try {
-      const body = { pid: r.pid || undefined, gear: r.gear || undefined, block: r.block, text: r.text, qty: r.qty, checked: r.checked, note: r.note };
+      const body = { pid: r.pid || undefined, gear: r.gear || undefined, block: r.block, text: r.text, qty: r.qty, box: r.box || 0, checked: r.checked, note: r.note };
       const d = await api('/api/gear?event=' + eventId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       r.pid = d.row ? d.row.pid : null;
       status('저장됨 · ' + new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }));
@@ -218,10 +262,10 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     finally { tr.classList.remove('saving'); updateSum(); }
   }
 
-  function rowEl(r, b) {
+  function rowEl(r, b, fixedRow) {
     const tr = el('tr');
     const tdN = el('td', 'name');
-    if (b.fixed) tdN.textContent = byId[r.gear] ? byId[r.gear].name : r.text;
+    if (fixedRow) tdN.textContent = byId[r.gear] ? byId[r.gear].name : r.text;
     else {
       const inp = el('input', 'kind'); inp.value = r.gear ? (byId[r.gear] || {}).name || '' : r.text;
       inp.placeholder = '종류'; inp.setAttribute('list', 'dl');
@@ -242,10 +286,16 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     const note = el('input', 'note'); note.value = r.note || ''; note.placeholder = '';
     note.addEventListener('input', () => { r.note = note.value; queueSave(r, tr); });
     const tq = el('td', 'q'); tq.append(qty);
+    let tb2 = null, boxIn = null;
+    if (b.box) {
+      boxIn = el('input', 'qty'); boxIn.type = 'number'; boxIn.inputMode = 'numeric'; boxIn.min = 0; boxIn.value = r.box || '';
+      boxIn.addEventListener('input', () => { r.box = Math.max(0, parseInt(boxIn.value, 10) || 0); paint(); queueSave(r, tr); });
+      tb2 = el('td', 'q'); tb2.append(boxIn);
+    }
     const tc = el('td', 'c'); tc.append(chk);
     const tn = el('td', 'n'); tn.append(note);
-    tr.append(tdN, tq, tc, tn);
-    function paint() { qty.classList.toggle('has', r.qty > 0); tr.classList.toggle('zero', !(r.qty > 0)); }
+    tr.append(...[tdN, tq, tb2, tc, tn].filter(Boolean));
+    function paint() { qty.classList.toggle('has', r.qty > 0); if (boxIn) boxIn.classList.toggle('has', r.box > 0); tr.classList.toggle('zero', !has(r)); }
     paint();
     return tr;
   }
@@ -267,7 +317,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
         h.addEventListener('click', () => { box.classList.toggle('fold'); folded[b.k] = box.classList.contains('fold'); });
         box.dataset.k = b.k;
         const tbl = el('table');
-        const hr = el('tr'); [['종류', ''], ['수량', 'q'], ['챙김', 'c'], ['NOTE', 'n']].forEach(([t, k]) => hr.append(el('th', k, t)));
+        const hr = el('tr'); (b.box ? [['종류', ''], ['EA', 'q'], ['BOX', 'q'], ['챙김', 'c'], ['NOTE', 'n']] : [['종류', ''], ['수량', 'q'], ['챙김', 'c'], ['NOTE', 'n']]).forEach(([t, k]) => hr.append(el('th', k, t)));
         const thead = el('thead'); thead.append(hr);
         const tb = el('tbody'); tbl.append(thead, tb); box.append(tbl);
         let mine = rows.filter((r) => blockOfRow(r) === b);
@@ -277,23 +327,23 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
           for (const g of list) {
             let r = mine.find((x) => x.gear === g.id);
             if (!r) { r = { key: ++seq, gear: g.id, qty: 0, checked: false, note: '' }; rows.push(r); }
-            tb.append(rowEl(r, b));
+            tb.append(rowEl(r, b, true));
           }
-          for (const r of mine.filter((x) => !list.some((g) => g.id === x.gear))) tb.append(rowEl(r, b));
-        } else {
-          for (const r of mine) tb.append(rowEl(r, b));
+          for (const r of mine.filter((x) => !list.some((g) => g.id === x.gear))) tb.append(rowEl(r, b, false));
+        }
+        if (!b.fixed) for (const r of mine) tb.append(rowEl(r, b, false));
+        if (!b.fixed || b.add) {
           const add = el('button', 'add', '+ 추가');
           add.disabled = !eventId;
           add.addEventListener('click', () => {
             const r = { key: ++seq, gear: null, block: b.k, text: '', qty: 0, checked: false, note: '' }; rows.push(r);
-            const tr = rowEl(r, b); tb.append(tr); tr.querySelector('input').focus();
+            const tr = rowEl(r, b, false); tb.append(tr); tr.querySelector('input').focus();
           });
           box.append(add);
         }
         if (!eventId) box.querySelectorAll('input').forEach((i) => { i.disabled = true; });
         // 휴대폰에서는 아직 넣은 게 없는 고정 칸(XLR·전원선 등 긴 목록)을 접어 둠. 머리글을 누르면 펼침
-        const hasAny = rows.some((r) => blockOfRow(r) === b && r.qty > 0);
-        const fold = b.k in folded ? folded[b.k] : b.k !== 'main';   // 처음엔 MAIN SPEAKER + AMP만 펼침
+        const fold = b.k in folded ? folded[b.k] : b.k !== OPEN;   // 처음엔 첫 칸(음향: MAIN SPEAKER + AMP, 영상: LED)만 펼침
         box.classList.toggle('fold', !!fold);
         c.append(box);
       }
@@ -303,7 +353,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   }
 
   function updateSum() {
-    const used = rows.filter((r) => r.qty > 0);
+    const used = rows.filter((r) => has(r) && blockOfRow(r));   // 이 화면(음향/영상) 칸에 속한 줄만
     document.querySelectorAll('.blk').forEach((box) => {
       const b = BLOCKS.find((x) => x.k === box.dataset.k);
       const n = used.filter((r) => blockOfRow(r) === b).length;
@@ -312,7 +362,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     const done = used.filter((r) => r.checked).length;
     $('sum').textContent = eventId && used.length ? `챙김 ${done} / ${used.length}종` : '';
     const ev = events.find((e) => e.id === eventId);
-    document.title = ev ? `음향장비 반출목록 · ${ev.title}` : '음향장비 반출목록';
+    document.title = ev ? `${TITLE} · ${ev.title}` : TITLE;
   }
 
   $('event').addEventListener('change', (e) => openEvent(e.target.value));
@@ -334,10 +384,11 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     timers.clear();
     const pending = [...chains.values()];
     const id = eventId;
+    const pids = rows.filter((r) => r.pid).map((r) => r.pid);
     rows = []; render(); status('초기화했습니다 · 노션에서 지우는 중…');
     try {
       await Promise.all(pending);
-      const d = await api('/api/gear/reset?event=' + id, { method: 'POST' });
+      const d = await api('/api/gear/reset?event=' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pids }) });
       if (eventId === id) status(`초기화 완료 (${d.removed}줄 · 노션 휴지통에서 되살릴 수 있음)`);
     } catch (e) { status('초기화 일부 실패: ' + e.message + ' (새로고침하면 남은 줄이 보입니다)', true); }
     finally { btn.disabled = false; }

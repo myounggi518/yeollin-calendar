@@ -51,6 +51,7 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     return {
       pid: normId(p.id), gear: gear || null, block, text,
       qty: typeof pr['수량']?.number === 'number' ? pr['수량'].number : 0,
+      box: typeof pr['BOX']?.number === 'number' ? pr['BOX'].number : 0,
       checked: !!pr['챙김']?.checkbox,
       note: plain(pr['note']?.rich_text),
     };
@@ -81,10 +82,11 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
       if (!target && g) target = existing.find((x) => x.gear === g.id) || null; // 같은 장비는 한 줄로
       const qty = Math.max(0, Math.min(9999, Math.round(Number(r.qty) || 0)));
       const note = String(r.note || '').slice(0, 300);
+      const box = Math.max(0, Math.min(9999, Math.round(Number(r.box) || 0)));
       const text = String(r.text || '').trim().slice(0, 100);
       const block = /^[a-z0-9]{1,12}$/.test(r.block || '') ? r.block : 'etc';
       if (!g && !text) { if (target) await notionRequest('PATCH', `/v1/pages/${target.pid}`, { in_trash: true }, key); return null; }
-      if (qty === 0 && !note && !r.checked) {
+      if (qty === 0 && box === 0 && !note && !r.checked) {
         if (target) await notionRequest('PATCH', `/v1/pages/${target.pid}`, { in_trash: true }, key);
         return null;
       }
@@ -92,6 +94,7 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
         '직접입력': { title: [{ text: { content: g ? g.full : `[${block}] ${text}` } }] },
         '장비': { relation: g ? [{ id: g.id }] : [] },
         '수량': { number: qty },
+        'BOX': { number: box },
         '챙김': { checkbox: !!r.checked },
         'note': { rich_text: note ? [{ text: { content: note } }] : [] },
       };
@@ -106,9 +109,11 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
   }
 
   // 이 일정의 줄을 모두 휴지통으로 (초기화)
-  async function resetEvent(eventId) {
+  // 이 일정의 줄 중 화면이 보낸 것(pids)만 지움 → 음향 초기화가 영상 기록을 지우지 않음
+  async function resetEvent(eventId, pids) {
+    const want = new Set((pids || []).map(normId));
     return withLock(eventId, async () => {
-      const rows = await listRows(eventId);
+      const rows = (await listRows(eventId)).filter((r) => want.has(r.pid));
       // 노션 한도(초당 약 3건) 안에서 3줄씩 동시에 지움
       let i = 0;
       const worker = async () => { while (i < rows.length) { const r = rows[i++]; await notionRequest('PATCH', `/v1/pages/${r.pid}`, { in_trash: true }, key); } };

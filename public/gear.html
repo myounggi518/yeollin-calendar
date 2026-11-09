@@ -64,6 +64,9 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   .bar button{padding:7px 9px;font-size:14px}
   #evname{font-size:15px}
 }
+/* LED처럼 EA·BOX 두 칸인 칸: 이름칸을 넓게 */
+.blk.box th.n,.blk.box td.n{width:18%}
+.blk.box th.q,.blk.box td.q{width:52px}
 @media print{
   .blk.fold table{display:table!important}
   body{background:#fff;padding:0}
@@ -315,7 +318,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
         const box = el('section', 'blk');
         const h = el('h2'); h.append(el('span', null, b.t), el('span', 'cnt'), el('span', 'arr', '▼')); box.append(h);
         h.addEventListener('click', () => { box.classList.toggle('fold'); folded[b.k] = box.classList.contains('fold'); });
-        box.dataset.k = b.k;
+        box.dataset.k = b.k; if (b.box) box.classList.add('box');
         const tbl = el('table');
         const hr = el('tr'); (b.box ? [['종류', ''], ['EA', 'q'], ['BOX', 'q'], ['챙김', 'c'], ['NOTE', 'n']] : [['종류', ''], ['수량', 'q'], ['챙김', 'c'], ['NOTE', 'n']]).forEach(([t, k]) => hr.append(el('th', k, t)));
         const thead = el('thead'); thead.append(hr);

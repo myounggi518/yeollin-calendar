@@ -113,6 +113,14 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   ];
   // 시트 순서대로 정렬 (목록에 없는 새 장비는 맨 뒤)
   const ORDER = {
+    mon: ['MJF212', 'MJF210', 'VTX M20', 'SRX912', 'PRX612', 'PRX615', 'PRX715', 'CX8', 'SRX712', 'EON510', 'EON710', 'KRK'],
+    con: ['PM5', 'RX+1608', 'Rpio', '3224', 'VI7000', 'VI7000 LOCAL', 'VI3000 no.1', 'VI3000 no.2', 'VI1', 'VI stage box', 'M32 no.1', 'M32 no.2', 'M32R', 'M32R live', 'DL16', '소형믹서', 'SSL fusion', 'maxxBCL', '광케이블'],
+    wl: ['Axient_1', 'Axient_2', 'Axient_3', 'Axient_4', 'UR4D_1', 'UR4D_2', 'UR4D_3', 'UR4D_4', 'UR4D_5', 'ewG4_1', 'ewG4_2', '슈어 안테나', '젠하이저 스플리터', '젠하이저 반구안테나'],
+    mic: ['SM58', 'SM57', 'BETA58', 'BETA57', 'SC4098', 'FM720', 'FM500', 'MX418', 'BETA52', 'BETA91', 'e904', 'MD604', 'MD504', 'e906', 'BETA98H/C', 'BETA98(D/S)', 'BETA98 H/C(WL)', 'D112', 'KM184', 'DPA4015A', 'C414', 'C480', 'C460', 'C451B', 'C419', 'C418', 'C411', 'MKH416', 'MKE2(BK)', 'MKE2(beige)', 'DPA라발리에', 'DPA4088', '산켄', '중국산라발리에', '중국산이어셋', '중국산이어셋(젠)', '중국산라발리에(젠)', 'AR133', 'PRO D2', 'ISO2', 'DN200', 'ice cube', 'J48', '아크릴 스탠드'],
+    iem: ['PSM1000', 'PSM900_1', 'PSM900_2', 'PSM900_G7 1ch', 'SR2050(3ea)', 'SR2050(4ea)', 'ewG4-IEM 1ch'],
+    etc: ['노래방반주기', 'MADIFACE USB', 'TASCAM DR-40X(2CH)', 'TASCAM DR680MK2(6CH)', 'FM 송신기', '8CH PASSIVE', '16CH PASSIVE', '24CH PASSIVE', '12CH ACTIVE', '20CH ACTIVE', '절체기', '베링거 스플리터', 'CHAINMASTER', 'CHAINMASTER REMOTE', 'MODE CONTROLLER(4CH)', 'mode', 'JDP', '옐로우자켓(대)', '옐로우자켓(소)', '검정비닐 롤', '투명비닐 롤', '봉투비닐', '파레트 커버', '인삼천 2*8', '인삼천 4*10', '3*6텐트', '3*4.5텐트', '3*3텐트', '텐트 가림막', '검정깔깔이', '고무바', '스피커 고정로프', '호이스트 리깅로프'],
+    radio: ['1set', '2set', '3set', '4set', 'holy land', 'HME', '클리어컴', '유무선 인터페이스'],
+    elec: ['메인파워랙-1', '메인파워랙-2', '메인파워랙-3', '3상파워팩', '단상파워팩', '70SQ', '50SQ', '35SQ', '접지선', '접지꼬리', '접지봉', '발전기용꼬리', '배전반용꼬리', '4가닥 실내용꼬리'],
     main: ['A12', 'A8', 'V20', 'V25', 'B28', 'B18', 'S25', 'S28', 'G28', 'PRX725', 'PRX-918XLF', 'PRX612', 'PRX615', 'PRX715', 'PRXONE', '4889', '4880', 'A8-AF', 'A12-AF', 'V20-AF', 'vertec-AF', 'A8-BP', 'A12-BP', 'v-Rack4x3500', 'v-Rack12000', '4x3500HD', '12000HD', 'IT4000'],
     a32: ['3상 30m', '3상 40m', '3상 60m', '3상 70m', '단상 30m', '단상 40m', '단상 60m', '단상 80m', '단상 100m'],
     multi: ['Digi-4ch-30m', 'Digi-4ch-50m', 'Anal-4ch-30m', 'Anal-4ch-50m', '12ch', '16ch-30m', '16ch-50m', '24ch', '12채널 박스', '16채널 박스', '24채널 박스', '12채널 꼬리', '16채널 꼬리', '24채널 꼬리'],

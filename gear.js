@@ -105,5 +105,14 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     });
   }
 
-  return { getCatalog, listRows, saveRow, isId: (s) => ID_RE.test(String(s || '')), normId };
+  // 이 일정의 줄을 모두 휴지통으로 (초기화)
+  async function resetEvent(eventId) {
+    return withLock(eventId, async () => {
+      const rows = await listRows(eventId);
+      for (const r of rows) await notionRequest('PATCH', `/v1/pages/${r.pid}`, { in_trash: true }, key);
+      return rows.length;
+    });
+  }
+
+  return { getCatalog, listRows, saveRow, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
 };

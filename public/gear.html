@@ -82,6 +82,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   <span class="sum" id="sum"></span>
   <button id="reload" class="noprint" title="다른 사람이 바꾼 내용 다시 불러오기">새로고침</button>
   <button id="print" class="noprint">인쇄</button>
+  <button id="reset" class="noprint" style="color:#b42318;border-color:#f0b4ae">초기화</button>
 </div>
 <div id="status"></div>
 <div class="grid" id="grid"></div>
@@ -315,6 +316,26 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   $('event').addEventListener('change', (e) => openEvent(e.target.value));
   $('reload').addEventListener('click', () => eventId && openEvent(eventId));
   $('print').addEventListener('click', () => window.print());
+  // 초기화: 한 번 누르면 확인 문구로 바뀌고, 3초 안에 한 번 더 눌러야 실행 (노션 앱 안에서는 확인 창이 막힐 수 있어 버튼으로 확인)
+  let resetArmed = null;
+  $('reset').addEventListener('click', async () => {
+    const btn = $('reset');
+    if (!eventId) return;
+    if (!resetArmed) {
+      btn.textContent = '정말 지울까요? 한 번 더'; btn.style.background = '#fde2e1';
+      resetArmed = setTimeout(() => { resetArmed = null; btn.textContent = '초기화'; btn.style.background = ''; }, 3000);
+      return;
+    }
+    clearTimeout(resetArmed); resetArmed = null; btn.textContent = '초기화'; btn.style.background = ''; btn.disabled = true;
+    status('초기화 중…');
+    try {
+      await Promise.all([...chains.values()]);
+      const d = await api('/api/gear/reset?event=' + eventId, { method: 'POST' });
+      await openEvent(eventId);
+      status(`초기화했습니다 (${d.removed}줄 삭제 · 노션 휴지통에서 되살릴 수 있음)`);
+    } catch (e) { status('초기화 실패: ' + e.message, true); }
+    finally { btn.disabled = false; }
+  });
   init();
 })();
 </script>

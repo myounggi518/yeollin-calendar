@@ -54,6 +54,7 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
       box: typeof pr['BOX']?.number === 'number' ? pr['BOX'].number : 0,
       checked: !!pr['챙김']?.checkbox,
       note: plain(pr['note']?.rich_text),
+      screen: pr['구분']?.select?.name === '영상' ? '영상' : '음향',   // 비어 있는 예전 줄은 음향
     };
   };
 
@@ -79,7 +80,9 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
       const existing = await listRows(eventId);
       let target = r.pid ? existing.find((x) => x.pid === normId(r.pid)) : null;
       if (r.pid && !target) target = null;                       // 이미 지워진 줄이면 새로 만듦
-      if (!target && g) target = existing.find((x) => x.gear === g.id) || null; // 같은 장비는 한 줄로
+      const screen = r.screen === '영상' ? '영상' : '음향';
+      if (target && target.screen !== screen) target = null;      // 다른 화면(음향/영상)의 줄은 건드리지 않음
+      if (!target && g) target = existing.find((x) => x.gear === g.id && x.screen === screen) || null; // 같은 화면·같은 장비는 한 줄로
       const qty = Math.max(0, Math.min(9999, Math.round(Number(r.qty) || 0)));
       const note = String(r.note || '').slice(0, 300);
       const box = Math.max(0, Math.min(9999, Math.round(Number(r.box) || 0)));
@@ -97,6 +100,7 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
         'BOX': { number: box },
         '챙김': { checkbox: !!r.checked },
         'note': { rich_text: note ? [{ text: { content: note } }] : [] },
+        '구분': { select: { name: screen } },
       };
       let page;
       if (target) page = await notionRequest('PATCH', `/v1/pages/${target.pid}`, { properties }, key);

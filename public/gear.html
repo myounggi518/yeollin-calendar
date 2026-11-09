@@ -138,14 +138,17 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     stand: ['스피커 스탠드', '마이크 스탠드 롱', '마이크 스탠드 숏', '박스(대)', '박스(소)1번', '박스(소)2번'],
   };
   const V_LAYOUT = [
-    [ { k: 'vled', t: "LED", cats: ["LED"], fixed: 1, box: 1 },
-      { k: 'vcon', t: "CONSOLE", cats: ["영상콘솔"], fixed: 1 },
+    [ { k: 'vled', t: "LED", cats: ["LED"], fixed: 1, box: 1, skip: ["Dicolor 4mm 노랑 500*500", "Dicolor 4mm 노랑 500*1000"] },
+      { k: 'vcon', t: "CONSOLE", cats: ["영상콘솔"], fixed: 1, skip: ["J6"] },
       { k: 'vproc', t: "PROCESSOR", cats: ["PROCESSOR"], fixed: 1 },
       { k: 'vopti', t: "OPTI", cats: ["OPTI"], fixed: 1 } ],
     [ { k: 'vgp', t: "CABLE · Gloshine power", cats: ["Gloshine power"], fixed: 1 },
       { k: 'vdp', t: "CABLE · Dicolor power", cats: ["Dicolor power"], fixed: 1 },
       { k: 'vva', t: "CABLE · Gloshine VA", cats: ["Gloshine VA"], fixed: 1 },
-      { k: 'vpp', t: "POWER PACK", cats: ["POWER PACK"], fixed: 1 } ],
+      { k: 'vpp', t: "POWER PACK", cats: ["POWER PACK"], fixed: 1 },
+      // 음향 화면과 같은 장비 종류지만, 영상 화면에서 넣은 줄은 「구분: 영상」으로 따로 저장됨
+      { k: 'velec', t: '전기시스템 + 메인선', cats: ['전기'], pick: 1 },
+      { k: 'v32a', t: '32A 케이블', cats: ['32A'], fixed: 1, skip: ['16A 변환'] } ],
     [ { k: 'vlan', t: "LAN", cats: ["LAN"], fixed: 1 },
       { k: 'vopt', t: "OPTI CABLE", cats: ["OPTI CABLE"], fixed: 1 },
       { k: 'vhdmi', t: "HDMI", cats: ["HDMI"], fixed: 1 },
@@ -157,7 +160,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   ];
   const V_ORDER = {
     vled: ["Dicolor 4mm 빨강 500*500", "Dicolor 4mm 빨강 500*1000", "Dicolor 4mm 파랑 500*500", "Dicolor 4mm 파랑 500*1000", "Dicolor 4mm 노랑 500*500", "Dicolor 4mm 노랑 500*1000", "Dicolor 3mm 500*500", "Gloshine VA 1000*500", "Gloshine 3mm 500*500", "Gloshine 3mm 500*1000"],
-    vcon: ["PIXELHUE U5", "PIXELHUE P20", "J6", "C1", "N9", "ks 928"],
+    vcon: ["PIXELHUE U5", "PIXELHUE P20", "PIXELHUE P80", "C1", "N9", "ks 928"],
     vproc: ["MCTR660", "Vx16s", "Vx1000", "MCTR 4k"],
     vopti: ["광DVI 은색", "광DVI 검정", "지빅"],
     vgp: ["POWER S", "POWER L", "POWER 10m", "POWER 15m", "POWER 20m"],
@@ -172,6 +175,8 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     vnb: ["LG gram", "samsung", "OMEN", "LG 노트북"],
     vmon: ["24\"", "32\"", "중계모니터", "삼성모니터"],
     vtv: ["43\"", "55\"", "75\""],
+    velec: A_ORDER.elec,
+    v32a: A_ORDER.a32,
   };
   const LAYOUT = VIDEO ? V_LAYOUT : A_LAYOUT, ORDER = VIDEO ? V_ORDER : A_ORDER;
   const OPEN = VIDEO ? 'vled' : 'main', TITLE = VIDEO ? '영상장비 반출목록' : '음향장비 반출목록';
@@ -238,7 +243,9 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     } catch (e) { status(e.message, true); }
   }
 
+  const SCREEN = VIDEO ? '영상' : '음향';
   function blockOfRow(r) {
+    if (r.pid && (r.screen || '음향') !== SCREEN) return null;   // 다른 화면에서 넣은 줄
     if (r.gear) { const g = byId[r.gear]; return g ? blockOfCat[g.cat] : null; }
     if (!r.block) return VIDEO ? null : BLOCKS.find((b) => b.k === 'etc');
     return BLOCKS.find((b) => b.k === r.block) || null;
@@ -257,9 +264,9 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   async function doSave(r, tr) {
     tr.classList.add('saving'); tr.classList.remove('failed');
     try {
-      const body = { pid: r.pid || undefined, gear: r.gear || undefined, block: r.block, text: r.text, qty: r.qty, box: r.box || 0, checked: r.checked, note: r.note };
+      const body = { screen: SCREEN, pid: r.pid || undefined, gear: r.gear || undefined, block: r.block, text: r.text, qty: r.qty, box: r.box || 0, checked: r.checked, note: r.note };
       const d = await api('/api/gear?event=' + eventId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      r.pid = d.row ? d.row.pid : null;
+      r.pid = d.row ? d.row.pid : null; r.screen = SCREEN;
       status('저장됨 · ' + new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }));
     } catch (e) { tr.classList.add('failed'); status('저장 실패: ' + e.message + ' (다시 입력하면 재시도)', true); }
     finally { tr.classList.remove('saving'); updateSum(); }
@@ -387,7 +394,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     timers.clear();
     const pending = [...chains.values()];
     const id = eventId;
-    const pids = rows.filter((r) => r.pid).map((r) => r.pid);
+    const pids = rows.filter((r) => r.pid && blockOfRow(r)).map((r) => r.pid);   // 이 화면 칸의 줄만 (음향↔영상 서로 안 지움)
     rows = []; render(); status('초기화했습니다 · 노션에서 지우는 중…');
     try {
       await Promise.all(pending);

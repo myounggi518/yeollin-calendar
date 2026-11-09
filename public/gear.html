@@ -67,6 +67,13 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 /* LED처럼 EA·BOX 두 칸인 칸: 이름칸을 넓게 */
 .blk.box th.n,.blk.box td.n{width:18%}
 .blk.box th.q,.blk.box td.q{width:52px}
+/* 영상: 스크린 사이즈 1~4번 */
+.scr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:2px 0 6px}
+.scr[hidden]{display:none}
+.scr label{display:flex;align-items:center;gap:4px;background:#fff;border:1.5px solid #9aa7b8;border-radius:8px;padding:4px 6px;font-size:12px;font-weight:700;color:#5e6a7e;white-space:nowrap}
+.scr input{flex:1;min-width:0;border:0;padding:4px 2px;font-size:14px;font-weight:700;background:transparent}
+.scr .saving{opacity:.55} .scr .failed{background:#fde2e1}
+@media (max-width:640px){.scr{grid-template-columns:repeat(2,minmax(0,1fr))}.scr input{font-size:16px}}
 @media print{
   .blk.fold table{display:table!important}
   body{background:#fff;padding:0}
@@ -89,6 +96,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   <button id="print" class="noprint">인쇄</button>
   <button id="reset" class="noprint" style="color:#b42318;border-color:#f0b4ae">초기화</button>
 </div>
+<div id="scr" class="scr" hidden></div>
 <div id="status"></div>
 <div class="grid" id="grid"></div>
 <datalist id="dl"></datalist>
@@ -317,7 +325,23 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     for (const g of list) dl.append(new Option(g.name));
   }
 
+  // 영상: 행사명 아래 스크린 사이즈 1~4번 (노션에는 [vscr] 1~4 줄의 NOTE로 저장)
+  function renderScreens() {
+    const box = $('scr'); box.textContent = '';
+    box.hidden = !VIDEO || !eventId;
+    if (box.hidden) return;
+    for (const n of ['1', '2', '3', '4']) {
+      let r = rows.find((x) => !x.gear && x.block === 'vscr' && x.text === n);
+      if (!r) { r = { key: ++seq, gear: null, block: 'vscr', text: n, qty: 0, checked: false, note: '' }; rows.push(r); }
+      const lab = el('label'); lab.append(n + '번 스크린');
+      const inp = el('input'); inp.value = r.note || ''; inp.placeholder = '사이즈';
+      inp.addEventListener('input', () => { r.note = inp.value; queueSave(r, lab); });
+      lab.append(inp); box.append(lab);
+    }
+  }
+
   function render() {
+    renderScreens();
     const grid = $('grid'); grid.textContent = '';
     for (const col of LAYOUT) {
       const c = el('div', 'col');

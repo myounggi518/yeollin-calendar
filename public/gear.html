@@ -218,7 +218,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
         const v = inp.value.trim();
         const g = catalog.find((x) => b.cats.includes(x.cat) && (x.name === v || x.full === v));
         if (g) { r.gear = g.id; r.text = ''; inp.value = g.name; } else { r.gear = null; r.text = v; r.block = b.k; }
-        if (!r.qty && v) { r.qty = 1; qty.value = 1; }
+        if (!r.qty && v) qty.focus();   // 수량은 비워 두고 바로 수량칸으로 이동
         queueSave(r, tr); paint();
       });
       tdN.append(inp);

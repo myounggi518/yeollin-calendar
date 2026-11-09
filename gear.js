@@ -109,7 +109,10 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
   async function resetEvent(eventId) {
     return withLock(eventId, async () => {
       const rows = await listRows(eventId);
-      for (const r of rows) await notionRequest('PATCH', `/v1/pages/${r.pid}`, { in_trash: true }, key);
+      // 노션 한도(초당 약 3건) 안에서 3줄씩 동시에 지움
+      let i = 0;
+      const worker = async () => { while (i < rows.length) { const r = rows[i++]; await notionRequest('PATCH', `/v1/pages/${r.pid}`, { in_trash: true }, key); } };
+      await Promise.all([worker(), worker(), worker()]);
       return rows.length;
     });
   }

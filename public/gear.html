@@ -327,13 +327,17 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
       return;
     }
     clearTimeout(resetArmed); resetArmed = null; btn.textContent = '초기화'; btn.style.background = ''; btn.disabled = true;
-    status('초기화 중…');
+    // 화면은 바로 비우고, 노션 삭제는 뒤에서 진행
+    for (const t of timers.values()) clearTimeout(t);
+    timers.clear();
+    const pending = [...chains.values()];
+    const id = eventId;
+    rows = []; render(); status('초기화했습니다 · 노션에서 지우는 중…');
     try {
-      await Promise.all([...chains.values()]);
-      const d = await api('/api/gear/reset?event=' + eventId, { method: 'POST' });
-      await openEvent(eventId);
-      status(`초기화했습니다 (${d.removed}줄 삭제 · 노션 휴지통에서 되살릴 수 있음)`);
-    } catch (e) { status('초기화 실패: ' + e.message, true); }
+      await Promise.all(pending);
+      const d = await api('/api/gear/reset?event=' + id, { method: 'POST' });
+      if (eventId === id) status(`초기화 완료 (${d.removed}줄 · 노션 휴지통에서 되살릴 수 있음)`);
+    } catch (e) { status('초기화 일부 실패: ' + e.message + ' (새로고침하면 남은 줄이 보입니다)', true); }
     finally { btn.disabled = false; }
   });
   init();

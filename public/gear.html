@@ -41,7 +41,11 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 .sum{font-size:12px;color:#5e6a7e;margin-left:auto}
 .empty{display:none}
 /* 휴대폰: 입력칸 글자 16px(아이폰 확대 방지), 위쪽 고정 막대, 칸 접기 */
-.top.noprint{position:sticky;top:0;z-index:5;background:#f4f7fb;padding:6px 0}
+.top.bar{position:sticky;top:0;z-index:5;background:#f4f7fb;padding:6px 0}
+#ttl{flex:1 0 100%}
+#evname{flex:1 1 150px;min-width:0;font-size:16px;line-height:1.3}
+#evname[hidden],#ttl[hidden]{display:none}
+.bar .sum{margin-left:0;white-space:nowrap}
 .blk h2{cursor:pointer;user-select:none}
 .blk h2 .cnt{margin-left:auto;font-size:12px;color:#1f7a3d;font-weight:700}
 .blk h2 .arr{font-size:11px;color:#5e6a7e;transition:transform .15s}
@@ -71,14 +75,13 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 </style>
 </head>
 <body>
-<div class="top">
-  <h1>📦 행사준비목록</h1>
-  <span class="sum" id="sum"></span>
-</div>
-<div class="top noprint">
+<div class="top bar">
+  <h1 id="ttl">📦 행사준비목록</h1>
   <select id="event" aria-label="일정 선택"><option>불러오는 중…</option></select>
-  <button id="reload" title="다른 사람이 바꾼 내용 다시 불러오기">새로고침</button>
-  <button id="print">인쇄</button>
+  <b id="evname" hidden></b>
+  <span class="sum" id="sum"></span>
+  <button id="reload" class="noprint" title="다른 사람이 바꾼 내용 다시 불러오기">새로고침</button>
+  <button id="print" class="noprint">인쇄</button>
 </div>
 <div id="status"></div>
 <div class="grid" id="grid"></div>
@@ -102,7 +105,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
       { k: 'etc', t: '기타 장비 (스플리터·아비옴·녹음·호이스트·우천 등)', cats: ['기타', '우천'], pick: 1 } ],
     [ { k: 'radio', t: '무전기 + 인터컴', cats: ['무전기'], pick: 1 },
       { k: 'elec', t: '전기시스템 + 메인선', cats: ['전기'], pick: 1 },
-      { k: 'a32', t: '32A 케이블', cats: ['32A'], fixed: 1 },
+      { k: 'a32', t: '32A 케이블', cats: ['32A'], fixed: 1, skip: ['16A 변환'] },
       { k: 'multi', t: '멀티 케이블', cats: ['멀티'], fixed: 1 } ],
     [ { k: 'xlr', t: 'XLR', cats: ['XLR'], fixed: 1 },
       { k: 'ac', t: '전원선', cats: ['전원'], fixed: 1 },
@@ -110,7 +113,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   ];
   // 시트 순서대로 정렬 (목록에 없는 새 장비는 맨 뒤)
   const ORDER = {
-    a32: ['3상', '단상', '16A 변환'],
+    a32: ['3상 30m', '3상 40m', '3상 60m', '3상 70m', '단상 30m', '단상 40m', '단상 60m', '단상 80m', '단상 100m'],
     multi: ['Digi-4ch-30m', 'Digi-4ch-50m', 'Anal-4ch-30m', 'Anal-4ch-50m', '12ch', '16ch-30m', '16ch-50m', '24ch', '12채널 박스', '16채널 박스', '24채널 박스', '12채널 꼬리', '16채널 꼬리', '24채널 꼬리'],
     xlr: ['3m', '5m', '10m', '20m', '2ch', '4ch', '8ch', '55(mono)', '55(stereo)', '55', '16patch', '20patch', 'aes/ebu 3m', 'aes/ebu 10m', '3.5-XLR', '3.5-Ctype'],
     ac: ['5m', '10m', '15m', '20m', '30m', '50m', '1구', '콘센트박스', 'power link 3m', 'power link 5m', 'power link 10m', 'Y케이블', 'AC케이블'],
@@ -152,7 +155,13 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
         if (!firstUpcoming && e.endDate >= today) firstUpcoming = e.id;
       }
       const want = (new URLSearchParams(location.search).get('event') || '').replace(/-/g, '').toLowerCase();
-      if (want && events.some((e) => e.id === want)) sel.value = want;
+      if (want && events.some((e) => e.id === want)) {
+        // 일정 페이지 안에 붙인 화면: 행사가 정해져 있으므로 선택칸 대신 행사 이름만 표시
+        sel.value = want; sel.hidden = true; $('ttl').hidden = true;
+        const ev = events.find((e) => e.id === want);
+        $('evname').textContent = `📦 ${fmtDate(ev.startDate)}${ev.endDate !== ev.startDate ? '~' + fmtDate(ev.endDate) : ''} ${ev.title}`;
+        $('evname').hidden = false;
+      }
       if (sel.value) await openEvent(sel.value); else { status('위에서 일정을 고르면 그 일정의 준비목록이 열립니다.'); render(); }
     } catch (e) { status(e.message, true); }
   }

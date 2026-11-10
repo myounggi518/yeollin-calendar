@@ -73,14 +73,13 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 .scr label{display:flex;align-items:center;gap:4px;background:#fff;border:1.5px solid #9aa7b8;border-radius:8px;padding:4px 6px;font-size:12px;font-weight:700;color:#5e6a7e;white-space:nowrap}
 .scr input{flex:1;min-width:0;border:0;padding:4px 2px;font-size:14px;font-weight:700;background:transparent}
 .scr .saving{opacity:.55} .scr .failed{background:#fde2e1}
-/* 영상: 영상담당자 (이름 버튼, 여러 명 선택) */
-.vstaff{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 6px;background:#fff;border:1.5px solid #9aa7b8;border-radius:8px;padding:6px 8px}
+/* 영상: 영상담당자 (선택형) */
+.vstaff{display:flex;align-items:center;gap:8px;margin:2px 0 6px;background:#fff;border:1.5px solid #9aa7b8;border-radius:8px;padding:4px 8px}
 .vstaff[hidden]{display:none}
-.vstaff b{font-size:12px;color:#5e6a7e;white-space:nowrap;margin-right:2px}
-.vstaff button{flex:1 1 0;min-width:0;padding:7px 4px;border:1.5px solid #c7d2e0;border-radius:999px;background:#fff;font-weight:700;font-size:14px;color:#3b4a60}
-.vstaff button.on{background:#2156a5;border-color:#2156a5;color:#fff}
+.vstaff b{font-size:12px;color:#5e6a7e;white-space:nowrap}
+.vstaff select{flex:1;min-width:0;border:0;padding:6px 2px;font-size:15px;font-weight:700;background:transparent;color:#15243b}
 .vstaff.saving{opacity:.6} .vstaff.failed{background:#fde2e1}
-@media (max-width:640px){.vstaff b{flex:1 0 100%}.vstaff button{font-size:15px;padding:9px 4px}}
+@media (max-width:640px){.vstaff select{font-size:16px}}
 @media (max-width:640px){.scr{grid-template-columns:repeat(2,minmax(0,1fr))}.scr input{font-size:16px}}
 /* 작성 완료 알림 */
 .notify{margin:14px 0 4px;background:#fff;border:1.5px solid #1f7a3d;border-radius:10px;padding:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -362,7 +361,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     }
   }
 
-  // 영상: 영상담당자 (노션에는 [vstaff] 담당자 줄의 NOTE에 "이름, 이름"으로 저장)
+  // 영상: 영상담당자 선택칸 (노션에는 [vstaff] 담당자 줄의 NOTE에 이름으로 저장)
   const V_STAFF = ['안준용', '정덕수', '김상연', '이영범'];
   function renderStaff() {
     const box = $('vstaff'); box.textContent = '';
@@ -370,18 +369,15 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     if (box.hidden) return;
     let r = rows.find((x) => !x.gear && x.block === 'vstaff');
     if (!r) { r = { key: ++seq, gear: null, block: 'vstaff', text: '담당자', qty: 0, checked: false, note: '' }; rows.push(r); }
-    const picked = new Set((r.note || '').split(',').map((x) => x.trim()).filter(Boolean));
     box.append(el('b', null, '🎬 영상담당자'));
-    for (const n of V_STAFF) {
-      const b = el('button', picked.has(n) ? 'on' : null, n); b.type = 'button';
-      b.addEventListener('click', () => {
-        if (picked.has(n)) picked.delete(n); else picked.add(n);
-        b.classList.toggle('on', picked.has(n));
-        r.note = V_STAFF.filter((x) => picked.has(x)).join(', ');
-        queueSave(r, box);
-      });
-      box.append(b);
-    }
+    const sel = el('select'); sel.setAttribute('aria-label', '영상담당자');
+    sel.append(new Option('— 선택 —', ''));
+    const cur = (r.note || '').trim();
+    for (const n of V_STAFF) sel.append(new Option(n, n));
+    if (cur && !V_STAFF.includes(cur)) sel.append(new Option(cur, cur));   // 예전에 여러 명 저장된 값도 그대로 보이게
+    sel.value = cur;
+    sel.addEventListener('change', () => { r.note = sel.value; queueSave(r, box); });
+    box.append(sel);
   }
 
   function render() {

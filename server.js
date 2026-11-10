@@ -441,6 +441,9 @@ async function handle(req, res) {
           .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, category: e.category && e.category.name }));
         return sendJson(res, 200, { catalog, events });
       }
+      if (req.method === 'GET' && url.pathname === '/api/gear/staff') {
+        return sendJson(res, 200, { names: NOTIFY_STAFF.map(([n]) => n) });
+      }
       const eventId = gear.normId(url.searchParams.get('event'));
       if (!gear.isId(eventId)) return sendError(res, 'BAD_REQUEST');
       if (req.method === 'GET' && url.pathname === '/api/gear') {
@@ -457,9 +460,6 @@ async function handle(req, res) {
         await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)));
         console.log(`반출목록 알림: ${ev.title} (${screen}) by ${name}`);
         return sendJson(res, 200, { ok: true, names: NOTIFY_STAFF.map(([n]) => n) });
-      }
-      if (req.method === 'GET' && url.pathname === '/api/gear/staff') {
-        return sendJson(res, 200, { names: NOTIFY_STAFF.map(([n]) => n) });
       }
       if (req.method === 'POST' && url.pathname === '/api/gear/reset') {
         const body = await readJson(req, 64 * 1024);

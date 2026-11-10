@@ -73,6 +73,14 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
 .scr label{display:flex;align-items:center;gap:4px;background:#fff;border:1.5px solid #9aa7b8;border-radius:8px;padding:4px 6px;font-size:12px;font-weight:700;color:#5e6a7e;white-space:nowrap}
 .scr input{flex:1;min-width:0;border:0;padding:4px 2px;font-size:14px;font-weight:700;background:transparent}
 .scr .saving{opacity:.55} .scr .failed{background:#fde2e1}
+/* 영상: 영상담당자 (이름 버튼, 여러 명 선택) */
+.vstaff{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:2px 0 6px;background:#fff;border:1.5px solid #9aa7b8;border-radius:8px;padding:6px 8px}
+.vstaff[hidden]{display:none}
+.vstaff b{font-size:12px;color:#5e6a7e;white-space:nowrap;margin-right:2px}
+.vstaff button{flex:1 1 0;min-width:0;padding:7px 4px;border:1.5px solid #c7d2e0;border-radius:999px;background:#fff;font-weight:700;font-size:14px;color:#3b4a60}
+.vstaff button.on{background:#2156a5;border-color:#2156a5;color:#fff}
+.vstaff.saving{opacity:.6} .vstaff.failed{background:#fde2e1}
+@media (max-width:640px){.vstaff b{flex:1 0 100%}.vstaff button{font-size:15px;padding:9px 4px}}
 @media (max-width:640px){.scr{grid-template-columns:repeat(2,minmax(0,1fr))}.scr input{font-size:16px}}
 /* 작성 완료 알림 */
 .notify{margin:14px 0 4px;background:#fff;border:1.5px solid #1f7a3d;border-radius:10px;padding:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -103,6 +111,7 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
   <button id="print" class="noprint">인쇄</button>
   <button id="reset" class="noprint" style="color:#b42318;border-color:#f0b4ae">초기화</button>
 </div>
+<div id="vstaff" class="vstaff" hidden></div>
 <div id="scr" class="scr" hidden></div>
 <div id="status"></div>
 <div class="grid" id="grid"></div>
@@ -353,7 +362,30 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
     }
   }
 
+  // 영상: 영상담당자 (노션에는 [vstaff] 담당자 줄의 NOTE에 "이름, 이름"으로 저장)
+  const V_STAFF = ['안준용', '정덕수', '김상연', '이영범'];
+  function renderStaff() {
+    const box = $('vstaff'); box.textContent = '';
+    box.hidden = !VIDEO || !eventId;
+    if (box.hidden) return;
+    let r = rows.find((x) => !x.gear && x.block === 'vstaff');
+    if (!r) { r = { key: ++seq, gear: null, block: 'vstaff', text: '담당자', qty: 0, checked: false, note: '' }; rows.push(r); }
+    const picked = new Set((r.note || '').split(',').map((x) => x.trim()).filter(Boolean));
+    box.append(el('b', null, '🎬 영상담당자'));
+    for (const n of V_STAFF) {
+      const b = el('button', picked.has(n) ? 'on' : null, n); b.type = 'button';
+      b.addEventListener('click', () => {
+        if (picked.has(n)) picked.delete(n); else picked.add(n);
+        b.classList.toggle('on', picked.has(n));
+        r.note = V_STAFF.filter((x) => picked.has(x)).join(', ');
+        queueSave(r, box);
+      });
+      box.append(b);
+    }
+  }
+
   function render() {
+    renderStaff();
     renderScreens();
     const grid = $('grid'); grid.textContent = '';
     for (const col of LAYOUT) {

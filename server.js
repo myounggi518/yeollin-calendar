@@ -57,6 +57,8 @@ const ERRORS = {
   NOTION_ERROR:      [502, '노션 일정 조회에 실패했습니다. 관리자에게 알려 주세요.'],
   TOO_MANY_RESULTS:  [502, '조회 결과가 너무 많습니다. 관리자에게 알려 주세요.'],
   BAD_REQUEST:       [400, '잘못된 요청입니다.'],
+  COMMENT_DENIED:    [502, '노션 댓글 권한이 꺼져 있습니다. 관리자에게 알려 주세요.'],
+  ALREADY_SENT:      [429, '방금 알림을 보냈습니다. 1분 뒤에 다시 보낼 수 있어요.'],
   STRUCT_DISABLED:   [503, '구조물 체크 기능이 아직 설정되지 않았습니다. 관리자에게 알려 주세요.'],
   STRUCT_NOT_ALLOWED:[400, '근무한 날(오늘까지)에만 구조물 체크를 할 수 있습니다.'],
   NOT_FOUND:         [404, '페이지를 찾을 수 없습니다.'],
@@ -249,6 +251,39 @@ async function setStruct(name, date, checked) {
 // ── 반출장비 (일정별 가져갈 장비) ─────────────────────────────────────
 const gear = require('./gear')({ notionRequest, key: NOTION_WRITE_KEY, AppError });
 
+// ── 반출목록 작성 완료 알림: 일정 페이지에 댓글을 달고 직원을 @멘션 → 노션 앱 알림 ──
+// 근무 DB에 연결된 읽기 통합(NOTION_API_KEY)이 「댓글 쓰기」 권한으로 댓글만 답니다(페이지 내용은 건드리지 않음).
+const NOTIFY_STAFF = [   // 노션 멤버 중 알림 받을 사람 (김광큰·jeongseonghun 제외 — 명기님 요청)
+  ['양정모', '407d872b-594c-81bf-a6ac-000296f2dffc'], ['안준용', '409d872b-594c-81c7-8d5e-00020ac6b2b6'],
+  ['정명기', '38cd872b-594c-81ef-87c8-000274048c5c'], ['인기 조', 'e3480cd3-1893-43dd-9a4c-d2e479f3ba30'],
+  ['정덕수', '405d872b-594c-81b5-9791-000263a9a564'], ['김상연', '408d872b-594c-8173-9b4f-0002a23e9336'],
+  ['이영범', '408d872b-594c-81e6-97bc-0002d55a099c'], ['김영인', '31dd872b-594c-8180-b1af-00024405d40d'],
+  ['Mook_sound_89', '408d872b-594c-8198-a46f-0002975539ef'], ['이득영', 'ee67a09c-194e-4359-87c0-52824f1f049c'],
+  ['열린기획', '406d872b-594c-813d-ac11-0002b2fad244'],
+];
+const lastNotify = new Map();
+async function notifyGear(ev, screen, name, count) {
+  const k = `${gear.normId(ev.id)}:${screen}`;
+  if (Date.now() - (lastNotify.get(k) || 0) < 60 * 1000) throw new AppError('ALREADY_SENT');
+  lastNotify.set(k, Date.now());
+  const [y, m, d] = ev.startDate.split('-').map(Number);
+  const w = '일월화수목금토'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  const icon = screen === '영상' ? '🎬' : '📦';
+  const head = `${icon} ${m}/${d}(${w}) ${ev.title} — ${screen}장비 반출목록 작성 완료 · 작성자 ${name}${count ? ` · ${count}종` : ''}\n`;
+  const rich = [{ type: 'text', text: { content: head } }];
+  NOTIFY_STAFF.forEach(([, id], i) => {
+    rich.push({ type: 'mention', mention: { type: 'user', user: { id } } });
+    if (i < NOTIFY_STAFF.length - 1) rich.push({ type: 'text', text: { content: ' ' } });
+  });
+  try {
+    await notionRequest('POST', '/v1/comments', { parent: { page_id: ev.id }, rich_text: rich }, NOTION_API_KEY);
+  } catch (e) {
+    lastNotify.delete(k);
+    if (e instanceof AppError && e.code === 'NOTION_NOT_SHARED') throw new AppError('COMMENT_DENIED');
+    throw e;
+  }
+}
+
 // 업무속성(선택/상태/다중선택) → { name, color }. 비어 있으면 null
 const NOTION_COLORS = new Set(['default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
 function readCategory(prop) {
@@ -410,6 +445,21 @@ async function handle(req, res) {
       if (!gear.isId(eventId)) return sendError(res, 'BAD_REQUEST');
       if (req.method === 'GET' && url.pathname === '/api/gear') {
         return sendJson(res, 200, { rows: await gear.listRows(eventId) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/gear/notify') {
+        const body = await readJson(req);
+        const screen = body && body.screen === '영상' ? '영상' : '음향';
+        const name = String((body && body.name) || '').trim().slice(0, 30);
+        if (!NOTIFY_STAFF.some(([n]) => n === name)) return sendError(res, 'BAD_REQUEST');
+        const cal = await getEvents();
+        const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
+        if (!ev) return sendError(res, 'BAD_REQUEST');
+        await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)));
+        console.log(`반출목록 알림: ${ev.title} (${screen}) by ${name}`);
+        return sendJson(res, 200, { ok: true, names: NOTIFY_STAFF.map(([n]) => n) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/gear/staff') {
+        return sendJson(res, 200, { names: NOTIFY_STAFF.map(([n]) => n) });
       }
       if (req.method === 'POST' && url.pathname === '/api/gear/reset') {
         const body = await readJson(req, 64 * 1024);

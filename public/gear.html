@@ -467,8 +467,9 @@ tr.zero td.name{color:#8a95a5;font-weight:500}
       await Promise.all([...chains.values()]);   // 아직 저장 중인 줄이 있으면 끝난 뒤 보냄
       const count = rows.filter((r) => has(r) && blockOfRow(r)).length;
       await api('/api/gear/notify?event=' + eventId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ screen: SCREEN, name: $('who').value, count }) });
-      msg.textContent = '알림 보냄 · ' + new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + ' (일정 페이지 댓글에서 확인)';
-    } catch (e) { msg.textContent = '알림 실패: ' + e.message; }
+      msg.style.color = '#1f7a3d'; msg.style.fontWeight = '700';
+      msg.textContent = '✅ 알림 보냄 · ' + new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + ' (일정 페이지 댓글에서 확인)';
+    } catch (e) { msg.textContent = '⚠️ 알림 실패: ' + e.message + ' (알림이 가지 않았습니다)'; msg.style.color = '#b42318'; msg.style.fontWeight = '700'; return; }
     finally { btn.textContent = '작성 완료 · 전체 알림'; btn.disabled = false; }
   });
   init();

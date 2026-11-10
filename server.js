@@ -263,21 +263,44 @@ const NOTIFY_STAFF = [   // 노션 멤버 중 알림 받을 사람 (김광큰·j
 ];
 const AUTHORS = NOTIFY_STAFF.filter((x) => !x[2]).map(([n]) => n);
 const lastNotify = new Map();
-async function notifyGear(ev, screen, name, count) {
-  const k = `${gear.normId(ev.id)}:${screen}`;
+// 노션에서 찾을 수 없는 사용자(퇴사·권한 없음)는 빼고 멘션 — 한 명 때문에 전체 알림이 실패하지 않도록
+const userOk = new Map();
+async function validStaff(list) {
+  const out = [];
+  for (const x of list) {
+    if (!userOk.has(x[1])) {
+      try { await notionRequest('GET', `/v1/users/${x[1]}`, null, NOTION_API_KEY); userOk.set(x[1], true); }
+      catch (e) { userOk.set(x[1], false); console.error(`알림 대상 사용자 확인 실패: ${x[0]}`); }
+    }
+    if (userOk.get(x[1])) out.push(x);
+  }
+  return out;
+}
+async function notifyGear(ev, screen, name, count, test) {
+  const k = `${gear.normId(ev.id)}:${screen}${test ? ':test' : ''}`;
   if (Date.now() - (lastNotify.get(k) || 0) < 60 * 1000) throw new AppError('ALREADY_SENT');
   lastNotify.set(k, Date.now());
   const [y, m, d] = ev.startDate.split('-').map(Number);
   const w = '일월화수목금토'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
   const icon = screen === '영상' ? '🎬' : '📦';
-  const head = `${icon} ${m}/${d}(${w}) ${ev.title} — ${screen}장비 반출목록 작성 완료 · 작성자 ${name}${count ? ` · ${count}종` : ''}\n`;
-  const rich = [{ type: 'text', text: { content: head } }];
-  NOTIFY_STAFF.forEach(([, id], i) => {
-    rich.push({ type: 'mention', mention: { type: 'user', user: { id } } });
-    if (i < NOTIFY_STAFF.length - 1) rich.push({ type: 'text', text: { content: ' ' } });
-  });
+  const head = `${test ? '[테스트] ' : ''}${icon} ${m}/${d}(${w}) ${ev.title} — ${screen}장비 반출목록 작성 완료 · 작성자 ${name}${count ? ` · ${count}종` : ''}\n`;
+  const build = (list) => {
+    const rich = [{ type: 'text', text: { content: head } }];
+    list.forEach(([, id], i) => {
+      rich.push({ type: 'mention', mention: { type: 'user', user: { id } } });
+      if (i < list.length - 1) rich.push({ type: 'text', text: { content: ' ' } });
+    });
+    return rich;
+  };
+  const targets = test ? NOTIFY_STAFF.filter(([n]) => n === name) : NOTIFY_STAFF;
+  const post = (list) => notionRequest('POST', '/v1/comments', { parent: { page_id: ev.id }, rich_text: build(list) }, NOTION_API_KEY);
   try {
-    await notionRequest('POST', '/v1/comments', { parent: { page_id: ev.id }, rich_text: rich }, NOTION_API_KEY);
+    try { await post(targets); }
+    catch (e) {   // 멘션 대상 중 노션이 못 찾는 사람이 있으면 빼고 다시
+      const ok = await validStaff(targets);
+      if (!ok.length || ok.length === targets.length) throw e;
+      await post(ok);
+    }
   } catch (e) {
     lastNotify.delete(k);
     if (e instanceof AppError && e.code === 'NOTION_NOT_SHARED') throw new AppError('COMMENT_DENIED');
@@ -458,7 +481,7 @@ async function handle(req, res) {
         const cal = await getEvents();
         const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
         if (!ev) return sendError(res, 'BAD_REQUEST');
-        await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)));
+        await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)), body.test === true);
         console.log(`반출목록 알림: ${ev.title} (${screen}) by ${name}`);
         return sendJson(res, 200, { ok: true });
       }

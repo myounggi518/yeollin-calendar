@@ -253,14 +253,15 @@ const gear = require('./gear')({ notionRequest, key: NOTION_WRITE_KEY, AppError 
 
 // ── 반출목록 작성 완료 알림: 일정 페이지에 댓글을 달고 직원을 @멘션 → 노션 앱 알림 ──
 // 근무 DB에 연결된 읽기 통합(NOTION_API_KEY)이 「댓글 쓰기」 권한으로 댓글만 답니다(페이지 내용은 건드리지 않음).
-const NOTIFY_STAFF = [   // 노션 멤버 중 알림 받을 사람 (김광큰·jeongseonghun 제외 — 명기님 요청)
-  ['양정모', '407d872b-594c-81bf-a6ac-000296f2dffc'], ['안준용', '409d872b-594c-81c7-8d5e-00020ac6b2b6'],
-  ['정명기', '38cd872b-594c-81ef-87c8-000274048c5c'], ['조인기', 'e3480cd3-1893-43dd-9a4c-d2e479f3ba30'],
-  ['정덕수', '405d872b-594c-81b5-9791-000263a9a564'], ['김상연', '408d872b-594c-8173-9b4f-0002a23e9336'],
+const NOTIFY_STAFF = [   // 노션 멤버 중 알림 받을 사람 (김광큰·jeongseonghun 제외 — 명기님 요청). 작성자 목록도 이 순서
+  ['이이사', 'ee67a09c-194e-4359-87c0-52824f1f049c'], ['양실장', '407d872b-594c-81bf-a6ac-000296f2dffc'],
+  ['안준용', '409d872b-594c-81c7-8d5e-00020ac6b2b6'], ['정명기', '38cd872b-594c-81ef-87c8-000274048c5c'],
+  ['조인기', 'e3480cd3-1893-43dd-9a4c-d2e479f3ba30'], ['정덕수', '405d872b-594c-81b5-9791-000263a9a564'],
+  ['윤상묵', '408d872b-594c-8198-a46f-0002975539ef'], ['김상연', '408d872b-594c-8173-9b4f-0002a23e9336'],
   ['이영범', '408d872b-594c-81e6-97bc-0002d55a099c'], ['김영인', '31dd872b-594c-8180-b1af-00024405d40d'],
-  ['윤상묵', '408d872b-594c-8198-a46f-0002975539ef'], ['이득영', 'ee67a09c-194e-4359-87c0-52824f1f049c'],
-  ['열린기획', '406d872b-594c-813d-ac11-0002b2fad244'],
+  ['열린기획', '406d872b-594c-813d-ac11-0002b2fad244', 'noAuthor'],   // 회사 계정: 알림만 받고 작성자 목록엔 안 보임
 ];
+const AUTHORS = NOTIFY_STAFF.filter((x) => !x[2]).map(([n]) => n);
 const lastNotify = new Map();
 async function notifyGear(ev, screen, name, count) {
   const k = `${gear.normId(ev.id)}:${screen}`;
@@ -442,7 +443,7 @@ async function handle(req, res) {
         return sendJson(res, 200, { catalog, events });
       }
       if (req.method === 'GET' && url.pathname === '/api/gear/staff') {
-        return sendJson(res, 200, { names: NOTIFY_STAFF.map(([n]) => n) });
+        return sendJson(res, 200, { names: AUTHORS });
       }
       const eventId = gear.normId(url.searchParams.get('event'));
       if (!gear.isId(eventId)) return sendError(res, 'BAD_REQUEST');
@@ -453,13 +454,13 @@ async function handle(req, res) {
         const body = await readJson(req);
         const screen = body && body.screen === '영상' ? '영상' : '음향';
         const name = String((body && body.name) || '').trim().slice(0, 30);
-        if (!NOTIFY_STAFF.some(([n]) => n === name)) return sendError(res, 'BAD_REQUEST');
+        if (!AUTHORS.includes(name)) return sendError(res, 'BAD_REQUEST');
         const cal = await getEvents();
         const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
         if (!ev) return sendError(res, 'BAD_REQUEST');
         await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)));
         console.log(`반출목록 알림: ${ev.title} (${screen}) by ${name}`);
-        return sendJson(res, 200, { ok: true, names: NOTIFY_STAFF.map(([n]) => n) });
+        return sendJson(res, 200, { ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/gear/reset') {
         const body = await readJson(req, 64 * 1024);

@@ -3,34 +3,76 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>오늘 날짜와 한국 시간 · 열린기획</title>
+<title>오늘 날짜·시간·날씨 · 열린기획</title>
 <style>
-:root{color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#173d32;background:transparent;-webkit-text-size-adjust:100%}
+:root{color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#173d32;background:transparent;-webkit-text-size-adjust:100%;--card:#f2f7f3;--line:#d6e5d9;--sub:#587363;--soft:#e6efe8;--rain:#2f6fb0}
 *{box-sizing:border-box}
-body{margin:0;min-height:100svh;display:grid;place-items:center;padding:8px}
-.clock{width:min(100%,760px);padding:20px 26px;background:#f2f7f3;border:1px solid #d6e5d9;border-radius:18px;display:flex;align-items:center;justify-content:space-between;gap:22px}
-.label{font-size:11px;letter-spacing:.12em;color:#587363;font-weight:600;margin:0 0 8px}
+body{margin:0;padding:8px;display:flex;justify-content:center}
+.card{width:min(100%,760px);background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.clock{padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.label{font-size:11px;letter-spacing:.12em;color:var(--sub);font-weight:600;margin:0 0 8px}
 .date{font-size:clamp(18px,3.1vw,25px);line-height:1.5;font-weight:700;letter-spacing:-.5px;margin:0;word-break:keep-all}
 .weekday{color:#536e5d}
 .time-wrap{white-space:nowrap;flex-shrink:0;display:flex;align-items:baseline;gap:7px;font-variant-numeric:tabular-nums}
-.time{font-size:clamp(42px,8vw,68px);font-weight:750;letter-spacing:-2px;line-height:1.08}
+.time{font-size:clamp(42px,8vw,64px);font-weight:750;letter-spacing:-2px;line-height:1.08}
 .seconds{font-size:22px;color:#688170;font-weight:500;min-width:28px}
-@media(max-width:540px){.clock{display:block;text-align:center;padding:18px 10px;border-radius:14px}.label{font-size:10px;margin-bottom:7px}.date{font-size:20px}.time-wrap{justify-content:center;margin-top:8px}.time{font-size:58px;letter-spacing:-1.5px}.seconds{font-size:23px}}
-@media(max-height:190px){body{padding:4px}.clock{padding-top:12px;padding-bottom:12px}.label{margin-bottom:4px}.time-wrap{margin-top:4px}.time{font-size:48px}.date{font-size:18px}}
-@media(prefers-color-scheme:dark){.clock{background:#183529;border-color:#355642}body{color:#e8f2e9}.label,.weekday,.seconds{color:#b4cdb9}}
+.wx{border-top:1px solid var(--line);padding:14px 20px 16px}
+.wx-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:10px}
+.place{font-size:14px;font-weight:700;margin:0}
+.updated{font-size:11px;color:var(--sub);margin:0;white-space:nowrap}
+.now{display:flex;align-items:center;gap:14px}
+.now-icon{font-size:46px;line-height:1}
+.now-temp{font-size:40px;font-weight:750;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
+.now-info{font-size:14px;line-height:1.55;color:#2b4b3f}
+.now-info b{font-weight:700}
+.hi{color:#c2452f;font-weight:700}.lo{color:#2f6fb0;font-weight:700}
+.rain{color:var(--rain);font-weight:700}
+.week{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:14px}
+.day{background:var(--soft);border-radius:10px;padding:8px 2px;text-align:center;font-variant-numeric:tabular-nums}
+.day.today{background:#d3e6d8;outline:1.5px solid #8fb79b}
+.d-name{font-size:12px;font-weight:700}
+.d-name.sun{color:#c2452f}.d-name.sat{color:#2f6fb0}
+.d-icon{font-size:22px;line-height:1.35}
+.d-t{font-size:12px;line-height:1.35}
+.d-p{font-size:11px;color:var(--rain);margin-top:1px}
+.msg{font-size:13px;color:var(--sub);margin:4px 0 0}
+@media(max-width:540px){
+ .clock{display:block;text-align:center;padding:16px 10px 14px}
+ .label{font-size:10px;margin-bottom:6px}.date{font-size:20px}
+ .time-wrap{justify-content:center;margin-top:6px}.time{font-size:54px;letter-spacing:-1.5px}.seconds{font-size:22px}
+ .wx{padding:12px 10px 14px}
+ .now{justify-content:center}
+ .now-icon{font-size:40px}.now-temp{font-size:36px}.now-info{font-size:13px}
+ .week{gap:3px}.day{padding:7px 0}.d-name{font-size:11px}.d-icon{font-size:19px}.d-t{font-size:11px}.d-p{font-size:10px}
+}
+@media(prefers-color-scheme:dark){
+ :root{--card:#183529;--line:#355642;--sub:#b4cdb9;--soft:#204434;--rain:#8cc0f0}
+ body{color:#e8f2e9}.weekday,.seconds{color:#b4cdb9}.now-info{color:#d6e6da}
+ .day.today{background:#2b5a44;outline-color:#5f9a76}
+ .hi,.d-name.sun{color:#ff9c86}.lo,.d-name.sat{color:#8cc0f0}
+}
 </style>
 </head>
 <body>
-<main class="clock" aria-label="한국 시간 기준 현재 날짜와 시간">
-  <div>
-    <p class="label">오늘 · 한국 시간</p>
-    <p class="date"><span id="date"></span> <span class="weekday" id="weekday"></span></p>
-  </div>
-  <div class="time-wrap" role="timer" aria-live="off"><time class="time" id="time"></time><span class="seconds" id="seconds" aria-label="초"></span></div>
-  <noscript>시간을 표시하려면 JavaScript를 켜 주세요.</noscript>
+<main class="card">
+  <section class="clock" aria-label="한국 시간 기준 현재 날짜와 시간">
+    <div>
+      <p class="label">오늘 · 한국 시간</p>
+      <p class="date"><span id="date"></span> <span class="weekday" id="weekday"></span></p>
+    </div>
+    <div class="time-wrap" role="timer" aria-live="off"><time class="time" id="time"></time><span class="seconds" id="seconds" aria-label="초"></span></div>
+    <noscript>시간을 표시하려면 JavaScript를 켜 주세요.</noscript>
+  </section>
+  <section class="wx" aria-label="열린기획의 날씨">
+    <div class="wx-head">
+      <p class="place">📍 열린기획의 날씨</p>
+      <p class="updated" id="updated"></p>
+    </div>
+    <div id="wx-body"><p class="msg">날씨를 불러오는 중…</p></div>
+  </section>
 </main>
 <script>
-// 서버 없이 기기 시계로 동작하며, 기기 시간대와 상관없이 한국 시간으로 표시합니다.
+// 시계: 기기 시계로 동작하며 한국 시간으로 표시합니다.
 const zone = 'Asia/Seoul';
 const dateFormat = new Intl.DateTimeFormat('ko-KR', { timeZone: zone, year: 'numeric', month: 'long', day: 'numeric' });
 const weekdayFormat = new Intl.DateTimeFormat('ko-KR', { timeZone: zone, weekday: 'long' });
@@ -46,6 +88,63 @@ function tick() {
 }
 tick();
 setInterval(tick, 1000);
+
+// 날씨: 열린기획 (광주 서구 무진대로 506) 기준, Open-Meteo 무료 예보, 30분마다 갱신.
+const LAT = 35.1525, LON = 126.8690;
+const WX_URL = 'https://api.open-meteo.com/v1/forecast?latitude=' + LAT + '&longitude=' + LON +
+  '&current=temperature_2m,apparent_temperature,weather_code,is_day' +
+  '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max' +
+  '&timezone=Asia%2FSeoul&forecast_days=7';
+function wxInfo(code, day = 1) {
+  if (code === 0) return [day ? '☀️' : '🌙', '맑음'];
+  if (code === 1) return [day ? '🌤️' : '🌙', '대체로 맑음'];
+  if (code === 2) return ['⛅', '구름 조금'];
+  if (code === 3) return ['☁️', '흐림'];
+  if (code === 45 || code === 48) return ['🌫️', '안개'];
+  if (code >= 51 && code <= 57) return ['🌦️', '이슬비'];
+  if (code >= 61 && code <= 67) return ['🌧️', '비'];
+  if (code >= 71 && code <= 77) return ['🌨️', '눈'];
+  if (code >= 80 && code <= 82) return ['🌧️', '소나기'];
+  if (code === 85 || code === 86) return ['🌨️', '눈 소나기'];
+  if (code >= 95) return ['⛈️', '뇌우'];
+  return ['🌡️', '-'];
+}
+const r = (n) => Math.round(n);
+const dayName = new Intl.DateTimeFormat('ko-KR', { timeZone: zone, weekday: 'short' });
+async function loadWeather() {
+  const body = document.getElementById('wx-body');
+  try {
+    const res = await fetch(WX_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error(res.status);
+    const w = await res.json(), c = w.current, d = w.daily;
+    const [icon, desc] = wxInfo(c.weather_code, c.is_day);
+    let html = '<div class="now"><div class="now-icon" aria-hidden="true">' + icon + '</div>' +
+      '<div class="now-temp">' + r(c.temperature_2m) + '°</div>' +
+      '<div class="now-info"><b>' + desc + '</b> · 체감 ' + r(c.apparent_temperature) + '°<br>' +
+      '<span class="hi">최고 ' + r(d.temperature_2m_max[0]) + '°</span> / <span class="lo">최저 ' + r(d.temperature_2m_min[0]) + '°</span>' +
+      ' · 비 <span class="rain">' + (d.precipitation_probability_max[0] ?? 0) + '%</span></div></div>';
+    html += '<div class="week" aria-label="주간 날씨">';
+    d.time.forEach((t, i) => {
+      const dt = new Date(t + 'T12:00:00+09:00'), wd = dt.getUTCDay();
+      const [di, dd] = wxInfo(d.weather_code[i]);
+      const name = i === 0 ? '오늘' : dayName.format(dt);
+      html += '<div class="day' + (i === 0 ? ' today' : '') + '" title="' + (t.slice(5).replace('-', '/')) + ' ' + dd + '">' +
+        '<div class="d-name' + (wd === 0 ? ' sun' : wd === 6 ? ' sat' : '') + '">' + name + '</div>' +
+        '<div class="d-icon" aria-label="' + dd + '">' + di + '</div>' +
+        '<div class="d-t"><span class="hi">' + r(d.temperature_2m_max[i]) + '°</span></div>' +
+        '<div class="d-t"><span class="lo">' + r(d.temperature_2m_min[i]) + '°</span></div>' +
+        '<div class="d-p">☔' + (d.precipitation_probability_max[i] ?? 0) + '%</div></div>';
+    });
+    html += '</div>';
+    body.innerHTML = html;
+    const p = timeFormat.formatToParts(new Date()), g = (t) => p.find((x) => x.type === t).value;
+    document.getElementById('updated').textContent = g('hour') + ':' + g('minute') + ' 갱신';
+  } catch (e) {
+    if (!body.querySelector('.now')) body.innerHTML = '<p class="msg">날씨를 불러오지 못했습니다. 잠시 후 다시 시도합니다.</p>';
+  }
+}
+loadWeather();
+setInterval(loadWeather, 30 * 60 * 1000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 </script>
 </body>

@@ -90,6 +90,48 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     return out;
   }
 
+  // 검색형 불러오기: 반출장비 DB의 「일정명」(YYYY-MM-DD 행사명)으로 찾음 → 일정별로 묶어 품목 수 셈
+  //  q 없으면 일정명 내림차순(날짜 늦은 순) 최근 limit개, q 있으면 기간 상관없이 행사명에 q가 들어간 일정
+  const recentCache = new Map();
+  async function searchSources(screen, q, limit) {
+    const ck = `${screen}|${q}`;
+    const hit = recentCache.get(ck);
+    if (hit && Date.now() - hit.at < 30 * 1000) return hit.list;
+    const body = { sorts: [{ property: '일정명', direction: 'descending' }] };
+    if (q) body.filter = { property: '일정명', rich_text: { contains: q } };
+    const byEv = new Map();
+    let cursor;
+    for (let i = 0; i < 20; i++) {   // 최대 2,000줄
+      const b = { page_size: 100, ...body }; if (cursor) b.start_cursor = cursor;
+      const d = await notionRequest('POST', `/v1/data_sources/${GEAR_DS}/query`, b, key);
+      for (const p of d.results || []) {
+        const r = rowOf(p);
+        if (r.screen !== screen || !r.ev || !(r.qty > 0 || r.box > 0)) continue;
+        let e = byEv.get(r.ev);
+        if (!e) {
+          if (byEv.size >= limit) continue;
+          const name = plain(p.properties?.['일정명']?.rich_text);
+          const m = /^(\d{4}-\d{2}-\d{2})\s*(.*)$/.exec(name);
+          e = { id: r.ev, date: m ? m[1] : '', title: m ? m[2] : name, count: 0 };
+          byEv.set(r.ev, e);
+        }
+        e.count++;
+      }
+      // 일정명 순서로 오므로, 목록이 다 찼고 마지막 일정의 줄을 다 센 뒤면 멈춤
+      if (!d.has_more) break;
+      if (byEv.size >= limit) {
+        const last = [...byEv.values()].pop();
+        const tail = (d.results || []).slice(-1)[0];
+        if (tail && normId(plain(tail.properties?.['일정ID']?.rich_text)) !== last.id) break;
+      }
+      cursor = d.next_cursor;
+    }
+    const list = [...byEv.values()];
+    recentCache.set(ck, { at: Date.now(), list });
+    if (recentCache.size > 200) recentCache.clear();
+    return list;
+  }
+
   // 같은 일정에 대한 저장은 한 줄로 세워서 처리(동시에 두 사람이 눌러도 같은 장비가 두 줄 생기지 않게)
   const locks = new Map();
   async function withLock(k, fn) {
@@ -153,5 +195,5 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     });
   }
 
-  return { getCatalog, listRows, listRowsFor, sourceCounts, saveRow, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
+  return { getCatalog, listRows, listRowsFor, sourceCounts, searchSources, saveRow, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
 };

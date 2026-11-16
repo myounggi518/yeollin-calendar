@@ -148,14 +148,14 @@ function toKstTime(s) {
 // ── Notion 요청 ─────────────────────────────────────────────────────
 // 월간일정표(원본)는 읽기 전용 키(NOTION_API_KEY)로 "조회"만 합니다.
 // 구조물 체크 기록 DB만 별도 키(NOTION_WRITE_KEY)로 쓰기를 합니다. 이 키는 그 DB에만 연결되어 있어 원본에 쓸 수 없습니다.
-async function notionRequest(method, apiPath, body, key, attempt = 0) {
+async function notionRequest(method, apiPath, body, key, attempt = 0, version = NOTION_VERSION) {
   let res;
   try {
     res = await fetch(`${NOTION_API_BASE}${apiPath}`, {
       method,
       headers: {
         Authorization: `Bearer ${key}`,
-        'Notion-Version': NOTION_VERSION,
+        'Notion-Version': version,
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -167,7 +167,7 @@ async function notionRequest(method, apiPath, body, key, attempt = 0) {
   if (res.status === 429 && attempt < 1) {                // 한도 초과 시 1회만, 짧게 기다렸다 재시도
     const wait = Math.min(Number(res.headers.get('retry-after')) || 1, 3);
     await sleep(wait * 1000);
-    return notionRequest(method, apiPath, body, key, attempt + 1);
+    return notionRequest(method, apiPath, body, key, attempt + 1, version);
   }
   let data = null;
   try { data = await res.json(); } catch { /* JSON이 아닌 응답 */ }
@@ -315,16 +315,23 @@ async function validStaff(list) {
   }
   return out;
 }
-async function notifyGear(ev, screen, name, count, test) {
+// 알림 댓글: 멘션으로 알림을 보낸 뒤, NOTIFY_HIDE_MS 뒤에 댓글을 고쳐 멘션(받는 사람)을 지우고 문구만 남김
+// GEAR_NOTIFY_HIDE=all 이면 모든 일정, 아니면 화면 주소에 &nhide=1 이 있는 곳(테스트페이지)만
+const NOTIFY_HIDE_ALL = process.env.GEAR_NOTIFY_HIDE === 'all';
+const NOTIFY_HIDE_MS = Number(process.env.GEAR_NOTIFY_HIDE_MS) || 60 * 1000;
+const COMMENT_EDIT_VERSION = '2026-03-11';   // 댓글 수정(PATCH /v1/comments)은 새 API 버전에서 지원
+async function notifyGear(ev, screen, name, count, test, hide) {
   const k = `${gear.normId(ev.id)}:${screen}${test ? ':test' : ''}`;
   if (Date.now() - (lastNotify.get(k) || 0) < 60 * 1000) throw new AppError('ALREADY_SENT');
   lastNotify.set(k, Date.now());
   const [y, m, d] = ev.startDate.split('-').map(Number);
   const w = '일월화수목금토'[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
   const icon = screen === '영상' ? '🎬' : '📦';
-  const head = `${test ? '[테스트] ' : ''}${icon} ${m}/${d}(${w}) ${ev.title} — ${screen}장비 반출목록 작성 완료 · 작성자 ${name}${count ? ` · ${count}종` : ''}\n`;
+  const head = hide
+    ? `${test ? '[테스트] ' : ''}${icon} ${m}/${d}(${w}) ${ev.title} · 작성자 ${name} · ${screen}장비 반출목록 확인 바랍니다`
+    : `${test ? '[테스트] ' : ''}${icon} ${m}/${d}(${w}) ${ev.title} — ${screen}장비 반출목록 작성 완료 · 작성자 ${name}${count ? ` · ${count}종` : ''}`;
   const build = (list) => {
-    const rich = [{ type: 'text', text: { content: head } }];
+    const rich = [{ type: 'text', text: { content: head + '\n' } }];
     list.forEach(([, id], i) => {
       rich.push({ type: 'mention', mention: { type: 'user', user: { id } } });
       if (i < list.length - 1) rich.push({ type: 'text', text: { content: ' ' } });
@@ -334,12 +341,18 @@ async function notifyGear(ev, screen, name, count, test) {
   const targets = test ? NOTIFY_STAFF.filter(([n]) => n === name) : NOTIFY_STAFF;
   const post = (list) => notionRequest('POST', '/v1/comments', { parent: { page_id: ev.id }, rich_text: build(list) }, NOTION_API_KEY);
   try {
-    try { await post(targets); }
+    let c;
+    try { c = await post(targets); }
     catch (e) {   // 멘션 대상 중 노션이 못 찾는 사람이 있으면 빼고 다시
       const ok = await validStaff(targets);
       if (!ok.length || ok.length === targets.length) throw e;
-      await post(ok);
+      c = await post(ok);
     }
+    if (hide && c && c.id) setTimeout(() => {   // 알림이 나간 뒤 받는 사람 목록을 지움
+      notionRequest('PATCH', `/v1/comments/${c.id}`, { rich_text: [{ type: 'text', text: { content: head } }] }, NOTION_API_KEY, 0, COMMENT_EDIT_VERSION)
+        .then(() => console.log(`알림 댓글 멘션 지움: ${ev.title}`))
+        .catch((e) => console.error('알림 댓글 수정 실패:', e.code || e.message));
+    }, NOTIFY_HIDE_MS);
   } catch (e) {
     lastNotify.delete(k);
     if (e instanceof AppError && e.code === 'NOTION_NOT_SHARED') throw new AppError('COMMENT_DENIED');
@@ -535,7 +548,7 @@ async function handle(req, res) {
         const cal = await getEvents();
         const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
         if (!ev) return sendError(res, 'BAD_REQUEST');
-        await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)), body.test === true);
+        await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)), body.test === true, NOTIFY_HIDE_ALL || body.hide === true);
         console.log(`반출목록 알림: ${ev.title} (${screen}) by ${name}`);
         return sendJson(res, 200, { ok: true });
       }

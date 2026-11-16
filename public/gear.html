@@ -636,6 +636,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   $('reload').addEventListener('click', () => eventId && openEvent(eventId));
   $('print').addEventListener('click', () => window.print());
   // 초기화: 한 번 누르면 확인 문구로 바뀌고, 3초 안에 한 번 더 눌러야 실행 (노션 앱 안에서는 확인 창이 막힐 수 있어 버튼으로 확인)
+  const qp0 = new URLSearchParams(location.search);   // 테스트: &ntest=1 본인에게만 알림, &nhide=1 알림 뒤 멘션 지우기
   let resetArmed = null;
   $('reset').addEventListener('click', async () => {
     const btn = $('reset');
@@ -686,7 +687,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
     try {
       await Promise.all([...chains.values()]);   // 아직 저장 중인 줄이 있으면 끝난 뒤 보냄
       const count = rows.filter((r) => has(r) && blockOfRow(r)).length;
-      await api('/api/gear/notify?event=' + eventId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ screen: SCREEN, name: $('who').value, count }) });
+      await api('/api/gear/notify?event=' + eventId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ screen: SCREEN, name: $('who').value, count, test: qp0.get('ntest') === '1' || undefined, hide: qp0.get('nhide') === '1' || undefined }) });
       msg.style.color = '#1f7a3d'; msg.style.fontWeight = '700';
       msg.textContent = '✅ 알림 보냄 · ' + new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + ' (일정 페이지 댓글에서 확인)';
     } catch (e) { msg.textContent = '⚠️ 알림 실패: ' + e.message + ' (알림이 가지 않았습니다)'; msg.style.color = '#b42318'; msg.style.fontWeight = '700'; return; }

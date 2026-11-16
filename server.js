@@ -257,6 +257,9 @@ const gear = require('./gear')({ notionRequest, key: NOTION_WRITE_KEY, AppError 
 const STOCK_ALL = process.env.GEAR_STOCK === 'all';
 // 「다른 일정 불러오기」: GEAR_COPY=all 이면 모든 일정, 아니면 화면 주소에 &copy=1 이 있는 곳(테스트페이지)만
 const COPY_ALL = process.env.GEAR_COPY === 'all';
+// 영상 반출목록용 (따로 켬): GEAR_VSTOCK=all · GEAR_VCOPY=all, 아니면 주소에 &stock=1 · &copy=1 이 있는 화면만
+const VSTOCK_ALL = process.env.GEAR_VSTOCK === 'all';
+const VCOPY_ALL = process.env.GEAR_VCOPY === 'all';
 const stock = require('./stock')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY], AppError });
 const overlaps = (a, b) => a.startDate <= b.endDate && b.startDate <= a.endDate;
 const evLabel = (e) => { const [, m, d] = e.startDate.split('-').map(Number); return `${m}/${d} ${e.title}`; };
@@ -270,12 +273,12 @@ async function stockState(ev, cal) {
   const used = {};
   for (const r of rows) {
     const it = r.gear && items[r.gear];
-    if (!it || r.screen !== '음향' || !(r.qty > 0) || !byEv[r.ev]) continue;
-    const u = (used[it.key] ||= { qty: 0, uses: [] });
-    u.qty += r.qty;
+    if (!it || !(r.qty > 0 || r.box > 0) || !byEv[r.ev]) continue;
+    const u = (used[it.key] ||= { qty: 0, box: 0, uses: [] });
+    u.qty += r.qty || 0; u.box += r.box || 0;
     const t = evLabel(byEv[r.ev]);
     const prev = u.uses.find((x) => x.t === t);
-    if (prev) prev.q += r.qty; else u.uses.push({ t, q: r.qty });
+    if (prev) { prev.q += r.qty || 0; prev.b += r.box || 0; } else u.uses.push({ t, q: r.qty || 0, b: r.box || 0 });
   }
   return { items, used };
 }
@@ -499,11 +502,12 @@ async function handle(req, res) {
         const from = new Date(Date.now() + KST_OFFSET_MS - 7 * 864e5).toISOString().slice(0, 10);
         const events = cal.events.filter((e) => e.endDate >= from)
           .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, category: e.category && e.category.name }));
-        return sendJson(res, 200, { catalog, events, stockAll: STOCK_ALL, copyAll: COPY_ALL });
+        return sendJson(res, 200, { catalog, events, stockAll: STOCK_ALL, copyAll: COPY_ALL, vstockAll: VSTOCK_ALL, vcopyAll: VCOPY_ALL });
       }
       if (req.method === 'GET' && url.pathname === '/api/gear/sources') {
         // 반출목록이 적힌 일정 (달력 범위 안: 지난달~다음 달), 가까운 날짜순
-        const [counts, cal] = await Promise.all([gear.sourceCounts(), getEvents()]);
+        const [all, cal] = await Promise.all([gear.sourceCounts(), getEvents()]);
+        const counts = all[url.searchParams.get('screen') === '영상' ? '영상' : '음향'];
         const list = cal.events.filter((e) => counts[gear.normId(e.id)])
           .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, count: counts[gear.normId(e.id)] }))
           .sort((a, b) => b.startDate.localeCompare(a.startDate));
@@ -548,7 +552,7 @@ async function handle(req, res) {
         const body = (await readJson(req)) || {};
         const save = () => gear.saveRow(eventId, body, `${ev.startDate} ${ev.title}`);
         const gid = body.gear ? gear.normId(body.gear) : '';
-        const stockOn = body.screen !== '영상' && gid && (STOCK_ALL || body.stock === true);
+        const stockOn = gid && ((body.screen === '영상' ? VSTOCK_ALL : STOCK_ALL) || body.stock === true);
         if (!stockOn) return sendJson(res, 200, { ok: true, row: await save() });
         let over = null;
         const row = await withStockLock(async () => {
@@ -559,15 +563,23 @@ async function handle(req, res) {
           if (!it) return save();
           const qty = Math.max(0, Math.round(Number(body.qty) || 0));
           // 같은 일정 안에서 같은 재고를 쓰는 다른 줄 (예: PRX715를 메인·모니터에 나눠 적은 경우)
-          const own = (await gear.listRows(eventId)).filter((r) => r.screen === '음향' && r.gear);
+          const own = (await gear.listRows(eventId)).filter((r) => r.gear && st.items[r.gear]);
           const isSelf = (r) => r.gear === gid || (body.pid && r.pid === gear.normId(body.pid));
-          const mine = own.filter((r) => !isSelf(r) && st.items[r.gear] && st.items[r.gear].key === it.key)
-            .reduce((a, r) => a + (r.qty || 0), 0);
+          const others = own.filter((r) => !isSelf(r) && st.items[r.gear].key === it.key);
+          const mine = others.reduce((a, r) => a + (r.qty || 0), 0);
+          const mineBox = others.reduce((a, r) => a + (r.box || 0), 0);
           const before = own.filter(isSelf).reduce((a, r) => Math.max(a, r.qty || 0), 0);
-          const u = st.used[it.key] || { qty: 0, uses: [] };
+          const beforeBox = own.filter(isSelf).reduce((a, r) => Math.max(a, r.box || 0), 0);
+          const u = st.used[it.key] || { qty: 0, box: 0, uses: [] };
           const avail = Math.max(0, it.stock - u.qty - mine);
+          const box = Math.max(0, Math.round(Number(body.box) || 0));
+          const boxAvail = typeof it.box === 'number' ? Math.max(0, it.box - u.box - mineBox) : Infinity;
           // 이미 적힌 수량을 줄이거나 그대로 두는 저장(챙김·NOTE)은 막지 않음
-          if (qty > avail && qty > before) { over = { stock: it.stock, used: u.qty + mine, avail, uses: u.uses, mine }; return null; }
+          if ((qty > avail && qty > before) || (box > boxAvail && box > beforeBox)) {
+            over = { stock: it.stock, used: u.qty + mine, avail, uses: u.uses, mine };
+            if (typeof it.box === 'number') Object.assign(over, { boxStock: it.box, boxUsed: u.box + mineBox, boxAvail, boxMine: mineBox });
+            return null;
+          }
           return save();
         });
         if (over) return sendError(res, 'STOCK_OVER', over);

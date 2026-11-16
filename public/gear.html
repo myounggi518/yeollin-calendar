@@ -250,17 +250,26 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
     if (!stockOn || !stockData || !r.gear) return null;
     const it = stockData.items[r.gear];
     if (!it) return null;
-    const u = stockData.used[it.key] || { qty: 0, uses: [] };
+    const u = stockData.used[it.key] || { qty: 0, box: 0, uses: [] };
     // 같은 일정 안에서 같은 재고를 쓰는 다른 줄 (PRX715를 메인·모니터 양쪽에 적은 경우 등)
-    const mine = rows.filter((x) => x !== r && x.gear && x.gear !== r.gear && blockOfRow(x) && stockData.items[x.gear] && stockData.items[x.gear].key === it.key)
-      .reduce((a, x) => a + (x.qty || 0), 0);
-    return { stock: it.stock, other: u.qty, mine, uses: u.uses, avail: Math.max(0, it.stock - u.qty - mine) };
+    const sib = rows.filter((x) => x !== r && x.gear && x.gear !== r.gear && blockOfRow(x) && stockData.items[x.gear] && stockData.items[x.gear].key === it.key);
+    const mine = sib.reduce((a, x) => a + (x.qty || 0), 0);
+    const a = { stock: it.stock, other: u.qty, mine, uses: u.uses, avail: Math.max(0, it.stock - u.qty - mine) };
+    if (typeof it.box === 'number') {   // LED: 박스도 따로 제한
+      const boxMine = sib.reduce((s, x) => s + (x.box || 0), 0);
+      Object.assign(a, { boxStock: it.box, boxOther: u.box || 0, boxMine, boxAvail: Math.max(0, it.box - (u.box || 0) - boxMine) });
+    }
+    return a;
   }
-  function stockWarnText(r, a) {
+  // which: 'qty' = 수량(LED는 판) / 'box' = LED 박스
+  function stockWarnText(r, a, which) {
     const nm = byId[r.gear] ? byId[r.gear].name : '';
-    const uses = a.uses.map((x) => x.t + (a.stock > 1 ? ' ' + x.q + '대' : '')).join(', ');
-    if (a.stock === 1 && a.other > 0) return `⚠️ ${STOCK_MSG}\n(${nm} · ${uses}에서 사용 중)`;
-    let t = `⚠️ ${STOCK_MSG}\n(보유 ${a.stock} · 다른 일정 사용 ${a.other}${a.mine ? ' · 이 일정 다른 칸 ' + a.mine : ''} · 남음 ${a.avail})`;
+    const isBox = which === 'box' && a.boxStock != null;
+    const unit = a.boxStock != null ? (isBox ? '박스 ' : '판 ') : '';
+    const st = isBox ? a.boxStock : a.stock, other = isBox ? a.boxOther : a.other, mine = isBox ? a.boxMine : a.mine, avail = isBox ? a.boxAvail : a.avail;
+    const uses = a.uses.map((x) => x.t + (st > 1 ? ' ' + (isBox ? x.b + '박스' : x.q + (unit ? '판' : '대')) : '')).join(', ');
+    if (st === 1 && other > 0) return `⚠️ ${STOCK_MSG}\n(${nm} · ${uses}에서 사용 중)`;
+    let t = `⚠️ ${STOCK_MSG}\n(보유 ${unit}${st} · 다른 일정 사용 ${other}${mine ? ' · 이 일정 다른 칸 ' + mine : ''} · 남음 ${avail})`;
     if (uses) t += `\n사용 중: ${uses}`;
     return t;
   }
@@ -297,8 +306,9 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
       const d = await api('/api/gear/init');
       catalog = d.catalog; byId = Object.fromEntries(catalog.map((g) => [g.id, g]));
       events = d.events;
-      stockOn = !VIDEO && (new URLSearchParams(location.search).get('stock') === '1' || !!d.stockAll);
-      copyOn = !VIDEO && (new URLSearchParams(location.search).get('copy') === '1' || !!d.copyAll);
+      const qp = new URLSearchParams(location.search);
+      stockOn = qp.get('stock') === '1' || !!(VIDEO ? d.vstockAll : d.stockAll);
+      copyOn = qp.get('copy') === '1' || !!(VIDEO ? d.vcopyAll : d.copyAll);
       const sel = $('event'); sel.textContent = '';
       sel.append(new Option('— 일정을 고르세요 —', ''));
       const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
@@ -329,7 +339,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
       stockData = null;
       const [d] = await Promise.all([api('/api/gear?event=' + id), loadStockData(id)]);
       if (eventId !== id) return;
-      rows = d.rows.map((r) => ({ ...r, key: ++seq, saved: r.qty }));
+      rows = d.rows.map((r) => ({ ...r, key: ++seq, saved: r.qty, savedBox: r.box }));
       render();
       status('입력하면 바로 노션에 저장됩니다. 수량을 0으로 지우면 그 줄은 빠집니다.');
     } catch (e) { status(e.message, true); }
@@ -363,19 +373,22 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
     try {
       const body = { screen: SCREEN, pid: r.pid || undefined, gear: r.gear || undefined, block: r.block, text: r.text, qty: r.qty, box: r.box || 0, checked: r.checked, note: r.note, stock: stockOn || undefined };
       const d = await api('/api/gear?event=' + eventId, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      r.pid = d.row ? d.row.pid : null; r.screen = SCREEN; r.saved = d.row ? body.qty : 0;
+      r.pid = d.row ? d.row.pid : null; r.screen = SCREEN; r.saved = d.row ? body.qty : 0; r.savedBox = d.row ? body.box : 0;
       status('저장됨 · ' + new Date().toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }));
     } catch (e) {
       const x = e.data;
       if (x && x.code === 'STOCK_OVER') {   // 그사이 다른 일정에서 먼저 잡은 경우: 남은 수량으로 되돌리고 경고
         const id = eventId;
         await loadStock(id);
-        const keep = Math.max(x.avail || 0, r.saved || 0);
-        const q = tr.querySelector('input.qty');
-        r.qty = keep; if (q) { q.value = keep || ''; q.classList.toggle('has', keep > 0); }
-        showWarn(tr, stockWarnText(r, { stock: x.stock, other: x.used - (x.mine || 0), mine: x.mine || 0, uses: x.uses || [], avail: x.avail || 0 }));
+        const a = { stock: x.stock, other: x.used - (x.mine || 0), mine: x.mine || 0, uses: x.uses || [], avail: x.avail || 0 };
+        if (x.boxStock != null) Object.assign(a, { boxStock: x.boxStock, boxOther: x.boxUsed - (x.boxMine || 0), boxMine: x.boxMine || 0, boxAvail: x.boxAvail || 0 });
+        const qs = tr.querySelectorAll('input.qty');
+        let which = 'qty';
+        if (r.qty > a.avail && r.qty > (r.saved || 0)) { r.qty = Math.max(a.avail, r.saved || 0); if (qs[0]) { qs[0].value = r.qty || ''; qs[0].classList.toggle('has', r.qty > 0); } }
+        if (a.boxStock != null && r.box > a.boxAvail && r.box > (r.savedBox || 0)) { which = 'box'; r.box = Math.max(a.boxAvail, r.savedBox || 0); if (qs[1]) { qs[1].value = r.box || ''; qs[1].classList.toggle('has', r.box > 0); } }
+        showWarn(tr, stockWarnText(r, a, which));
         hints.forEach((f) => f());
-        if (keep !== (r.saved || 0)) queueSave(r, tr);
+        if (r.qty !== (r.saved || 0) || (r.box || 0) !== (r.savedBox || 0)) queueSave(r, tr);
       } else { tr.classList.add('failed'); status('저장 실패: ' + e.message + ' (다시 입력하면 재시도)', true); }
     }
     finally { tr.classList.remove('saving'); updateSum(); }
@@ -418,6 +431,12 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
       qty.max = Math.max(a.avail, r.saved || 0);
       const left = a.avail - (r.qty || 0);   // 이 줄에 적은 수량까지 뺀 남은 수량
       if (a.stock === 1 && a.other > 0) { hint.textContent = '⛔ ' + a.uses.map((x) => x.t).join(', ') + ' 사용 중'; hint.className = 'stk none'; return; }
+      if (a.boxStock != null) {   // LED: 판·박스
+        const bl = a.boxAvail - (r.box || 0);
+        hint.textContent = `남음 판 ${Math.max(0, left)}/${a.stock} · 박스 ${Math.max(0, bl)}/${a.boxStock}`;
+        hint.className = 'stk' + (left <= 0 || bl <= 0 ? ' none' : left <= Math.ceil(a.stock * 0.2) || bl <= Math.ceil(a.boxStock * 0.2) ? ' low' : '');
+        return;
+      }
       hint.textContent = `남음 ${Math.max(0, left)} / 보유 ${a.stock}`;
       hint.className = 'stk' + (left <= 0 ? ' none' : left <= Math.ceil(a.stock * 0.2) ? ' low' : '');
     };
@@ -430,7 +449,15 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
     let tb2 = null, boxIn = null;
     if (b.box) {
       boxIn = el('input', 'qty'); boxIn.type = 'number'; boxIn.inputMode = 'numeric'; boxIn.min = 0; boxIn.value = r.box || '';
-      boxIn.addEventListener('input', () => { r.box = Math.max(0, parseInt(boxIn.value, 10) || 0); paint(); queueSave(r, tr); });
+      boxIn.addEventListener('input', () => {
+        let v = Math.max(0, parseInt(boxIn.value, 10) || 0);
+        const a = availFor(r);
+        if (a && a.boxStock != null && v > a.boxAvail && v > (r.savedBox || 0)) {   // 박스 재고 넘음
+          showWarn(tr, stockWarnText(r, a, 'box'));
+          v = Math.max(a.boxAvail, r.savedBox || 0); boxIn.value = v || '';
+        }
+        r.box = v; paint(); queueSave(r, tr); hints.forEach((f) => f());
+      });
       tb2 = el('td', 'q'); tb2.append(boxIn);
     }
     const tc = el('td', 'c'); tc.append(chk);
@@ -557,7 +584,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
     box.hidden = false; copyMsg('이미 적힌 품목은 그대로 두고, 없는 품목만 추가합니다. 챙김은 빈칸으로 가져옵니다.');
     const sel = $('copySrc'); sel.textContent = ''; sel.append(new Option('불러오는 중…', ''));
     try {
-      const d = await api('/api/gear/sources');
+      const d = await api('/api/gear/sources?screen=' + encodeURIComponent(SCREEN));
       sel.textContent = ''; sel.append(new Option('— 불러올 일정을 고르세요 —', ''));
       const list = d.events.filter((e) => e.id !== eventId);
       for (const e of list) sel.append(new Option(`${fmtDate(e.startDate)}${e.endDate !== e.startDate ? '~' + fmtDate(e.endDate) : ''} ${e.title} · ${e.count}종`, e.id));
@@ -585,7 +612,8 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
         if (!r) { r = { key: ++seq, gear: s.gear || null, block: s.block, text: s.text, qty: 0, box: 0, checked: false, note: '' }; rows.push(r); }
         r.qty = s.qty || 0; r.box = s.box || 0; r.note = s.note || ''; r.checked = false;
         const a = availFor(r);
-        if (a && r.qty > a.avail) { cut.push(`${byId[r.gear] ? byId[r.gear].name : ''} ${r.qty}→${a.avail}`); r.qty = a.avail; }
+        if (a && r.qty > a.avail) { cut.push(`${byId[r.gear] ? byId[r.gear].name : ''} ${a.boxStock != null ? '판 ' : ''}${r.qty}→${a.avail}`); r.qty = a.avail; }
+        if (a && a.boxStock != null && r.box > a.boxAvail) { cut.push(`${byId[r.gear] ? byId[r.gear].name : ''} 박스 ${r.box}→${a.boxAvail}`); r.box = a.boxAvail; }
         if (!has(r) && !r.note.trim()) { rows.splice(rows.indexOf(r), 1); continue; }
         todo.push(r); added++;
       }

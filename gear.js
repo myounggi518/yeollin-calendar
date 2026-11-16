@@ -76,15 +76,15 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     return out;
   }
 
-  // 반출목록이 적힌 일정들: { 일정ID: 품목 수 } (음향 화면 줄만, 1분 캐시)
+  // 반출목록이 적힌 일정들 (화면별, 1분 캐시)
   let srcCache = null, srcAt = 0;
   async function sourceCounts() {
     if (srcCache && Date.now() - srcAt < 60 * 1000) return srcCache;
     const rows = (await queryAll(GEAR_DS, {})).map(rowOf);
-    const out = {};
+    const out = { '음향': {}, '영상': {} };   // 화면별 { 일정ID: 품목 수 }
     for (const r of rows) {
-      if (r.screen !== '음향' || !r.ev || !(r.qty > 0 || r.box > 0)) continue;
-      out[r.ev] = (out[r.ev] || 0) + 1;
+      if (!r.ev || !(r.qty > 0 || r.box > 0)) continue;
+      out[r.screen][r.ev] = (out[r.screen][r.ev] || 0) + 1;
     }
     srcCache = out; srcAt = Date.now();
     return out;

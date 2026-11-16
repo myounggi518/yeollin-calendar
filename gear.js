@@ -76,6 +76,20 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     return out;
   }
 
+  // 반출목록이 적힌 일정들: { 일정ID: 품목 수 } (음향 화면 줄만, 1분 캐시)
+  let srcCache = null, srcAt = 0;
+  async function sourceCounts() {
+    if (srcCache && Date.now() - srcAt < 60 * 1000) return srcCache;
+    const rows = (await queryAll(GEAR_DS, {})).map(rowOf);
+    const out = {};
+    for (const r of rows) {
+      if (r.screen !== '음향' || !r.ev || !(r.qty > 0 || r.box > 0)) continue;
+      out[r.ev] = (out[r.ev] || 0) + 1;
+    }
+    srcCache = out; srcAt = Date.now();
+    return out;
+  }
+
   // 같은 일정에 대한 저장은 한 줄로 세워서 처리(동시에 두 사람이 눌러도 같은 장비가 두 줄 생기지 않게)
   const locks = new Map();
   async function withLock(k, fn) {
@@ -139,5 +153,5 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     });
   }
 
-  return { getCatalog, listRows, listRowsFor, saveRow, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
+  return { getCatalog, listRows, listRowsFor, sourceCounts, saveRow, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
 };

@@ -87,6 +87,17 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
 .vstaff.saving{opacity:.6} .vstaff.failed{background:#fde2e1}
 @media (max-width:640px){.vstaff select{font-size:16px}}
 @media (max-width:640px){.scr{grid-template-columns:repeat(2,minmax(0,1fr))}.scr input{font-size:16px}}
+/* 다른 일정 불러오기 */
+.copy{margin:2px 0 8px;background:#fff;border:1.5px solid #2156a5;border-radius:10px;padding:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.copy[hidden]{display:none}
+.copy b{flex:1 0 100%;font-size:14px;color:#2156a5}
+.copy select{flex:1 1 200px;min-width:0;padding:9px;border:1px solid #ccd5e0;border-radius:8px;background:#fff;font-size:16px}
+.copy .go{flex:1 1 120px;background:#2156a5;border-color:#2156a5;color:#fff;font-weight:700;padding:11px}
+.copy .go:disabled{opacity:.5}
+.copy small{flex:1 0 100%;font-size:12px;color:#5e6a7e;white-space:pre-line}
+.copy small.ok{color:#1f7a3d;font-weight:700}
+.copy small.err{color:#b42318;font-weight:700}
+#copyBtn[hidden]{display:none}
 /* 작성 완료 알림 */
 .notify{margin:14px 0 4px;background:#fff;border:1.5px solid #1f7a3d;border-radius:10px;padding:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .notify b{flex:1 0 100%;font-size:14px;color:#1f7a3d}
@@ -112,9 +123,17 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   <select id="event" aria-label="일정 선택"><option>불러오는 중…</option></select>
   <b id="evname" hidden></b>
   <span class="sum" id="sum"></span>
+  <button id="copyBtn" class="noprint" hidden style="color:#2156a5;border-color:#9db8e3">📋 불러오기</button>
   <button id="reload" class="noprint" title="다른 사람이 바꾼 내용 다시 불러오기">새로고침</button>
   <button id="print" class="noprint">인쇄</button>
   <button id="reset" class="noprint" style="color:#b42318;border-color:#f0b4ae">초기화</button>
+</div>
+<div class="copy noprint" id="copy" hidden>
+  <b>📋 다른 일정의 반출목록 불러오기</b>
+  <select id="copySrc" aria-label="불러올 일정"><option value="">불러오는 중…</option></select>
+  <button class="go" id="copyGo">불러오기</button>
+  <button id="copyClose">닫기</button>
+  <small id="copyMsg">이미 적힌 품목은 그대로 두고, 없는 품목만 추가합니다. 챙김은 빈칸으로 가져옵니다.</small>
 </div>
 <div id="vstaff" class="vstaff" hidden></div>
 <div id="scr" class="scr" hidden></div>
@@ -225,7 +244,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   let seq = 0;
   const folded = {};
   // ── 재고 제한 (음향 화면만). 테스트: 주소에 &stock=1 / 전체: 서버 GEAR_STOCK=all ──
-  let stockOn = false, stockData = null, hints = [];
+  let stockOn = false, stockData = null, hints = [], copyOn = false;
   const STOCK_MSG = '재고현황의 숫자를 넘어서면 선택할 수 없습니다';
   function availFor(r) {
     if (!stockOn || !stockData || !r.gear) return null;
@@ -279,6 +298,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
       catalog = d.catalog; byId = Object.fromEntries(catalog.map((g) => [g.id, g]));
       events = d.events;
       stockOn = !VIDEO && (new URLSearchParams(location.search).get('stock') === '1' || !!d.stockAll);
+      copyOn = !VIDEO && (new URLSearchParams(location.search).get('copy') === '1' || !!d.copyAll);
       const sel = $('event'); sel.textContent = '';
       sel.append(new Option('— 일정을 고르세요 —', ''));
       const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
@@ -362,7 +382,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   }
 
   function rowEl(r, b, fixedRow) {
-    const tr = el('tr');
+    const tr = el('tr'); r._tr = tr;
     const tdN = el('td', 'name');
     if (fixedRow) tdN.textContent = byId[r.gear] ? byId[r.gear].name : r.text;
     else {
@@ -527,6 +547,62 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
     const ev = events.find((e) => e.id === eventId);
     document.title = ev ? `${TITLE} · ${ev.title}` : TITLE;
   }
+
+  // ── 다른 일정에서 불러오기 (합치기: 이미 있는 품목은 그대로, 없는 품목만 추가) ──
+  setInterval(() => { $('copyBtn').hidden = !copyOn || !eventId; if (!eventId) $('copy').hidden = true; }, 500);
+  const copyMsg = (t, cls) => { const m = $('copyMsg'); m.textContent = t; m.className = cls || ''; };
+  $('copyBtn').addEventListener('click', async () => {
+    const box = $('copy');
+    if (!box.hidden) { box.hidden = true; return; }
+    box.hidden = false; copyMsg('이미 적힌 품목은 그대로 두고, 없는 품목만 추가합니다. 챙김은 빈칸으로 가져옵니다.');
+    const sel = $('copySrc'); sel.textContent = ''; sel.append(new Option('불러오는 중…', ''));
+    try {
+      const d = await api('/api/gear/sources');
+      sel.textContent = ''; sel.append(new Option('— 불러올 일정을 고르세요 —', ''));
+      const list = d.events.filter((e) => e.id !== eventId);
+      for (const e of list) sel.append(new Option(`${fmtDate(e.startDate)}${e.endDate !== e.startDate ? '~' + fmtDate(e.endDate) : ''} ${e.title} · ${e.count}종`, e.id));
+      if (!list.length) { sel.textContent = ''; sel.append(new Option('반출목록이 적힌 다른 일정이 없습니다', '')); }
+    } catch (e) { copyMsg('일정 목록을 못 불러왔습니다: ' + e.message, 'err'); }
+  });
+  $('copyClose').addEventListener('click', () => { $('copy').hidden = true; });
+  $('copyGo').addEventListener('click', async () => {
+    const src = $('copySrc').value, id = eventId, btn = $('copyGo');
+    if (!src || !id) { copyMsg('먼저 불러올 일정을 고르세요.', 'err'); return; }
+    const srcName = $('copySrc').selectedOptions[0].textContent.replace(/ · \d+종$/, '');
+    btn.disabled = true; copyMsg('불러오는 중…');
+    try {
+      await Promise.all([...chains.values()]);
+      const [d] = await Promise.all([api('/api/gear?event=' + src), loadStock(id)]);
+      if (eventId !== id) return;
+      const content = (x) => has(x) || !!(x.note || '').trim() || !!x.pid;
+      let added = 0, skipped = 0; const cut = [], todo = [];
+      for (const s of d.rows) {
+        if (!blockOfRow(s) || !(has(s) || (s.note || '').trim())) continue;
+        if (!s.gear && (s.block === 'vscr' || s.block === 'vstaff')) continue;
+        const same = (x) => blockOfRow(x) && (s.gear ? x.gear === s.gear : (!x.gear && x.block === s.block && x.text === s.text));
+        if (rows.some((x) => same(x) && content(x))) { skipped++; continue; }
+        let r = rows.find((x) => same(x) && !content(x));   // 빈 고정 줄이 있으면 그 줄을 채움
+        if (!r) { r = { key: ++seq, gear: s.gear || null, block: s.block, text: s.text, qty: 0, box: 0, checked: false, note: '' }; rows.push(r); }
+        r.qty = s.qty || 0; r.box = s.box || 0; r.note = s.note || ''; r.checked = false;
+        const a = availFor(r);
+        if (a && r.qty > a.avail) { cut.push(`${byId[r.gear] ? byId[r.gear].name : ''} ${r.qty}→${a.avail}`); r.qty = a.avail; }
+        if (!has(r) && !r.note.trim()) { rows.splice(rows.indexOf(r), 1); continue; }
+        todo.push(r); added++;
+      }
+      render();
+      for (let i = 0; i < todo.length; i++) {   // 한 줄씩 차례로 노션에 저장
+        if (eventId !== id) return;
+        copyMsg(`노션에 저장하는 중… ${i + 1} / ${todo.length}`);
+        await doSave(todo[i], todo[i]._tr);
+      }
+      let t = `✅ ${srcName}에서 ${added}종 불러옴`;
+      if (skipped) t += ` · 이미 있던 ${skipped}종은 그대로`;
+      if (cut.length) t += `\n⚠️ 재고 부족으로 줄임: ${cut.join(', ')}`;
+      copyMsg(t, cut.length ? 'err' : 'ok');
+      status(t.split('\n')[0]);
+    } catch (e) { copyMsg('불러오기 실패: ' + e.message, 'err'); }
+    finally { btn.disabled = false; }
+  });
 
   $('event').addEventListener('change', (e) => openEvent(e.target.value));
   $('reload').addEventListener('click', () => eventId && openEvent(eventId));

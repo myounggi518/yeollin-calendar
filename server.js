@@ -255,6 +255,8 @@ const gear = require('./gear')({ notionRequest, key: NOTION_WRITE_KEY, AppError 
 // ── 반출목록 재고 제한 (스피커·무선 세트·유선마이크) ─────────────────────
 // GEAR_STOCK=all 이면 모든 일정에서 켜짐. 아니면 화면 주소에 &stock=1 이 붙은 곳(테스트페이지)에서만 켜짐.
 const STOCK_ALL = process.env.GEAR_STOCK === 'all';
+// 「다른 일정 불러오기」: GEAR_COPY=all 이면 모든 일정, 아니면 화면 주소에 &copy=1 이 있는 곳(테스트페이지)만
+const COPY_ALL = process.env.GEAR_COPY === 'all';
 const stock = require('./stock')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY], AppError });
 const overlaps = (a, b) => a.startDate <= b.endDate && b.startDate <= a.endDate;
 const evLabel = (e) => { const [, m, d] = e.startDate.split('-').map(Number); return `${m}/${d} ${e.title}`; };
@@ -497,7 +499,15 @@ async function handle(req, res) {
         const from = new Date(Date.now() + KST_OFFSET_MS - 7 * 864e5).toISOString().slice(0, 10);
         const events = cal.events.filter((e) => e.endDate >= from)
           .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, category: e.category && e.category.name }));
-        return sendJson(res, 200, { catalog, events, stockAll: STOCK_ALL });
+        return sendJson(res, 200, { catalog, events, stockAll: STOCK_ALL, copyAll: COPY_ALL });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/gear/sources') {
+        // 반출목록이 적힌 일정 (달력 범위 안: 지난달~다음 달), 가까운 날짜순
+        const [counts, cal] = await Promise.all([gear.sourceCounts(), getEvents()]);
+        const list = cal.events.filter((e) => counts[gear.normId(e.id)])
+          .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, count: counts[gear.normId(e.id)] }))
+          .sort((a, b) => b.startDate.localeCompare(a.startDate));
+        return sendJson(res, 200, { events: list });
       }
       if (req.method === 'GET' && url.pathname === '/api/gear/staff') {
         return sendJson(res, 200, { names: AUTHORS });

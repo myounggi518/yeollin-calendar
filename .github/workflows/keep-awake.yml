@@ -1,0 +1,18 @@
+# Render 무료 서버가 잠들지 않도록 10분마다 깨워 둡니다.
+# (보기전용 달력·시계·반출목록이 처음 열 때 1~2분 걸리는 문제 해결)
+name: 서버 깨워두기
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 서버 두드리기
+        run: |
+          curl -fsS --retry 3 --retry-delay 20 --max-time 120 \
+            https://yeollin-calendar.onrender.com/healthz || true

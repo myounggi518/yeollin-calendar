@@ -55,12 +55,25 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
       checked: !!pr['챙김']?.checkbox,
       note: plain(pr['note']?.rich_text),
       screen: pr['구분']?.select?.name === '영상' ? '영상' : '음향',   // 비어 있는 예전 줄은 음향
+      ev: normId(plain(pr['일정ID']?.rich_text)),
     };
   };
 
   async function listRows(eventId) {
     const rows = await queryAll(GEAR_DS, { filter: { property: '일정ID', rich_text: { equals: eventId } } });
     return rows.map(rowOf);
+  }
+
+  // 여러 일정의 줄을 한 번에 (재고 계산용). 노션 묶음 조건 한도에 맞춰 40개씩
+  async function listRowsFor(eventIds) {
+    const ids = [...new Set(eventIds.map(normId))].filter((x) => ID_RE.test(x));
+    const out = [];
+    for (let i = 0; i < ids.length; i += 40) {
+      const part = ids.slice(i, i + 40);
+      const rows = await queryAll(GEAR_DS, { filter: { or: part.map((id) => ({ property: '일정ID', rich_text: { equals: id } })) } });
+      out.push(...rows.map(rowOf));
+    }
+    return out;
   }
 
   // 같은 일정에 대한 저장은 한 줄로 세워서 처리(동시에 두 사람이 눌러도 같은 장비가 두 줄 생기지 않게)
@@ -126,5 +139,5 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     });
   }
 
-  return { getCatalog, listRows, saveRow, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
+  return { getCatalog, listRows, listRowsFor, saveRow, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
 };

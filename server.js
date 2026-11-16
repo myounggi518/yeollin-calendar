@@ -62,6 +62,7 @@ const ERRORS = {
   STRUCT_DISABLED:   [503, '구조물 체크 기능이 아직 설정되지 않았습니다. 관리자에게 알려 주세요.'],
   STRUCT_NOT_ALLOWED:[400, '근무한 날(오늘까지)에만 구조물 체크를 할 수 있습니다.'],
   NOT_FOUND:         [404, '페이지를 찾을 수 없습니다.'],
+  STOCK_OVER:        [409, '재고현황의 숫자를 넘어서면 선택할 수 없습니다.'],
 };
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest();
@@ -250,6 +251,39 @@ async function setStruct(name, date, checked) {
 
 // ── 반출장비 (일정별 가져갈 장비) ─────────────────────────────────────
 const gear = require('./gear')({ notionRequest, key: NOTION_WRITE_KEY, AppError });
+
+// ── 반출목록 재고 제한 (스피커·무선 세트·유선마이크) ─────────────────────
+// GEAR_STOCK=all 이면 모든 일정에서 켜짐. 아니면 화면 주소에 &stock=1 이 붙은 곳(테스트페이지)에서만 켜짐.
+const STOCK_ALL = process.env.GEAR_STOCK === 'all';
+const stock = require('./stock')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY], AppError });
+const overlaps = (a, b) => a.startDate <= b.endDate && b.startDate <= a.endDate;
+const evLabel = (e) => { const [, m, d] = e.startDate.split('-').map(Number); return `${m}/${d} ${e.title}`; };
+// 이 일정과 기간이 겹치는 다른 일정들이 품목별(재고 키)로 쓰는 수량
+async function stockState(ev, cal) {
+  const catalog = await gear.getCatalog();
+  const items = await stock.limits(catalog);
+  const others = cal.events.filter((e) => gear.normId(e.id) !== gear.normId(ev.id) && overlaps(e, ev));
+  const byEv = Object.fromEntries(others.map((e) => [gear.normId(e.id), e]));
+  const rows = others.length ? await gear.listRowsFor(others.map((e) => e.id)) : [];
+  const used = {};
+  for (const r of rows) {
+    const it = r.gear && items[r.gear];
+    if (!it || r.screen !== '음향' || !(r.qty > 0) || !byEv[r.ev]) continue;
+    const u = (used[it.key] ||= { qty: 0, uses: [] });
+    u.qty += r.qty;
+    const t = evLabel(byEv[r.ev]);
+    const prev = u.uses.find((x) => x.t === t);
+    if (prev) prev.q += r.qty; else u.uses.push({ t, q: r.qty });
+  }
+  return { items, used };
+}
+// 재고가 걸린 저장은 한 줄로 세워 처리 (두 일정에서 동시에 마지막 1대를 잡지 않게)
+let stockChain = Promise.resolve();
+function withStockLock(fn) {
+  const job = stockChain.then(fn, fn);
+  stockChain = job.catch(() => {});
+  return job;
+}
 
 // ── 반출목록 작성 완료 알림: 일정 페이지에 댓글을 달고 직원을 @멘션 → 노션 앱 알림 ──
 // 근무 DB에 연결된 읽기 통합(NOTION_API_KEY)이 「댓글 쓰기」 권한으로 댓글만 답니다(페이지 내용은 건드리지 않음).
@@ -463,7 +497,7 @@ async function handle(req, res) {
         const from = new Date(Date.now() + KST_OFFSET_MS - 7 * 864e5).toISOString().slice(0, 10);
         const events = cal.events.filter((e) => e.endDate >= from)
           .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, category: e.category && e.category.name }));
-        return sendJson(res, 200, { catalog, events });
+        return sendJson(res, 200, { catalog, events, stockAll: STOCK_ALL });
       }
       if (req.method === 'GET' && url.pathname === '/api/gear/staff') {
         return sendJson(res, 200, { names: AUTHORS });
@@ -472,6 +506,12 @@ async function handle(req, res) {
       if (!gear.isId(eventId)) return sendError(res, 'BAD_REQUEST');
       if (req.method === 'GET' && url.pathname === '/api/gear') {
         return sendJson(res, 200, { rows: await gear.listRows(eventId) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/gear/stock') {
+        const cal = await getEvents();
+        const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
+        if (!ev) return sendError(res, 'BAD_REQUEST');
+        return sendJson(res, 200, await stockState(ev, cal));
       }
       if (req.method === 'POST' && url.pathname === '/api/gear/notify') {
         const body = await readJson(req);
@@ -495,8 +535,32 @@ async function handle(req, res) {
         const cal = await getEvents();
         const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
         if (!ev) return sendError(res, 'BAD_REQUEST');
-        const body = await readJson(req);
-        const row = await gear.saveRow(eventId, body || {}, `${ev.startDate} ${ev.title}`);
+        const body = (await readJson(req)) || {};
+        const save = () => gear.saveRow(eventId, body, `${ev.startDate} ${ev.title}`);
+        const gid = body.gear ? gear.normId(body.gear) : '';
+        const stockOn = body.screen !== '영상' && gid && (STOCK_ALL || body.stock === true);
+        if (!stockOn) return sendJson(res, 200, { ok: true, row: await save() });
+        let over = null;
+        const row = await withStockLock(async () => {
+          let st;
+          try { st = await stockState(ev, cal); }
+          catch (e) { console.error('재고 확인 실패(제한 없이 저장):', e.code || e.message); return save(); }
+          const it = st.items[gid];
+          if (!it) return save();
+          const qty = Math.max(0, Math.round(Number(body.qty) || 0));
+          // 같은 일정 안에서 같은 재고를 쓰는 다른 줄 (예: PRX715를 메인·모니터에 나눠 적은 경우)
+          const own = (await gear.listRows(eventId)).filter((r) => r.screen === '음향' && r.gear);
+          const isSelf = (r) => r.gear === gid || (body.pid && r.pid === gear.normId(body.pid));
+          const mine = own.filter((r) => !isSelf(r) && st.items[r.gear] && st.items[r.gear].key === it.key)
+            .reduce((a, r) => a + (r.qty || 0), 0);
+          const before = own.filter(isSelf).reduce((a, r) => Math.max(a, r.qty || 0), 0);
+          const u = st.used[it.key] || { qty: 0, uses: [] };
+          const avail = Math.max(0, it.stock - u.qty - mine);
+          // 이미 적힌 수량을 줄이거나 그대로 두는 저장(챙김·NOTE)은 막지 않음
+          if (qty > avail && qty > before) { over = { stock: it.stock, used: u.qty + mine, avail, uses: u.uses, mine }; return null; }
+          return save();
+        });
+        if (over) return sendError(res, 'STOCK_OVER', over);
         return sendJson(res, 200, { ok: true, row });
       }
       return sendError(res, 'NOT_FOUND');

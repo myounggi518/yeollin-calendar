@@ -493,7 +493,7 @@ async function handle(req, res) {
   }
 
   if (req.method === 'GET' && ['/clock', '/clock.html'].includes(url.pathname)) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     return res.end(CLOCK_HTML);
   }
 

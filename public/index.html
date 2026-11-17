@@ -26,7 +26,8 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
 .calendar{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}
 .weekday{text-align:center;font-size:13px;font-weight:700;padding:8px 2px;color:#59677d}
 .weekday.sat{color:#316abc}.weekday.sun{color:#d64949}
-.day{min-width:0;min-height:104px;background:#fff;border:1px solid #e1e6ee;border-radius:9px;padding:6px;overflow:hidden}
+.calendar{--pad:6px;--gap:3px}
+.day{min-width:0;min-height:104px;background:#fff;border:1px solid #e1e6ee;border-radius:9px;padding:var(--pad);overflow:visible}
 .day.other{opacity:.42}
 .num{font-size:13px;font-weight:700;margin-bottom:5px}
 .day.sat .num{color:#316abc}.day.sun .num{color:#d64949}
@@ -45,7 +46,14 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
 .c-purple{background:#ece3f6;color:#64409a}
 .c-pink{background:#f8e1ec;color:#9b2f67}
 .c-red{background:#fbdcdc;color:#a8231d}
-.event.multi{border-left:3px solid currentColor}  /* 여러 날 일정 */
+/* 여러 날 일정: 같은 높이 줄에 칸 사이 틈까지 이어 그려 막대 하나처럼 보이게 함 */
+.event.multi{position:relative;font-weight:600}
+.event.multi.cont-l{margin-left:calc(-1 * (var(--pad) + 1px + var(--gap) / 2));padding-left:calc(5px + var(--pad) + 1px + var(--gap) / 2);border-top-left-radius:0;border-bottom-left-radius:0}
+.event.multi.cont-r{margin-right:calc(-1 * (var(--pad) + 1px + var(--gap) / 2));padding-right:calc(5px + var(--pad) + 1px + var(--gap) / 2);border-top-right-radius:0;border-bottom-right-radius:0}
+.event.multi.wk-l{border-left:2px dashed currentColor}   /* 지난주에서 이어짐 */
+.event.multi.wk-r{border-right:2px dashed currentColor}  /* 다음 주로 이어짐 */
+.event.ghost{visibility:hidden}
+.event.multi.c-none{background:#eef0f3;box-shadow:none}
 #legend{display:flex;flex-wrap:wrap;gap:4px 6px;margin:0 0 8px;font-size:12px}
 #legend span{padding:2px 7px;border-radius:99px;white-space:nowrap}
 #gate{background:#fff;border:1px solid #dbe1e9;padding:14px;border-radius:12px;margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap}
@@ -55,10 +63,13 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
 .hidden{display:none!important}
 @media(max-width:600px){
   body{padding:8px;padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
-  .day{min-height:76px;padding:3px;border-radius:5px}
+  .day{min-height:76px;border-radius:5px}
   .calendar{gap:2px}
   .num{font-size:11px;margin-bottom:2px}
   .event{padding:2px 3px;margin:2px 0;font-size:10px;line-height:1.25;border-radius:3px}
+  .calendar{--pad:3px;--gap:2px}
+  .event.multi.cont-l{padding-left:calc(3px + var(--pad) + 1px + var(--gap) / 2)}
+  .event.multi.cont-r{padding-right:calc(3px + var(--pad) + 1px + var(--gap) / 2)}
   .weekday{font-size:11px;padding:5px 1px}
   .bar{gap:4px}
   .bar button{padding:7px 9px}
@@ -178,28 +189,76 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
     const count = new Date(Date.UTC(view.y, view.m + 1, 0)).getUTCDate();
     const total = Math.ceil((lead + count) / 7) * 7;
     const today = kstToday().key;
+    const isMulti = (e) => e.endDate && e.endDate !== e.startDate;
+    const addDays = (k, n) => { const d = new Date(k + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+    const makeEvent = (e, key) => {
+      const a = document.createElement('a');
+      const multi = isMulti(e);
+      a.className = 'event c-' + (e.category ? e.category.color : 'none');
+      if (multi) {
+        a.classList.add('multi');
+        const dow = new Date(key + 'T00:00:00Z').getUTCDay();
+        if (key > e.startDate) a.classList.add(dow === 1 ? 'wk-l' : 'cont-l');
+        if (key < e.endDate) a.classList.add(dow === 0 ? 'wk-r' : 'cont-r');
+      }
+      // 여러 날 일정은 칸마다 같은 글자 → 같은 높이로 이어짐
+      if (e.time && (multi || key === e.startDate)) { const t = document.createElement('span'); t.className = 't'; t.textContent = e.time; a.append(t); }
+      a.append(document.createTextNode(e.title));
+      a.title = (e.category ? `[${e.category.name}] ` : '') + e.title + (multi ? ` (${e.startDate} ~ ${e.endDate})` : '');
+      if (/^https:\/\//.test(e.url || '')) { a.href = e.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+      return a;
+    };
+    let lanes = [], week = -1;
     for (let i = 0; i < total; i++) {
       const d = new Date(Date.UTC(view.y, view.m, i - lead + 1));
       const key = d.toISOString().slice(0, 10), dow = d.getUTCDay();
+      if (i % 7 === 0) {
+        // 이번 주에 걸친 여러 날 일정을 줄(lane)에 배치: 먼저 시작·더 긴 일정이 위,
+        // 기간이 겹치지 않는 일정은 같은 줄을 함께 씀 → 빈 줄 최소화
+        const seen = new Set(), list = [];
+        for (let j = 0; j < 7; j++) for (const e of byDay.get(addDays(key, j)) || []) if (isMulti(e) && !seen.has(e)) { seen.add(e); list.push(e); }
+        list.sort((a, b) => (a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : (a.endDate < b.endDate ? 1 : a.endDate > b.endDate ? -1 : 0)));
+        lanes = [];
+        for (const e of list) {
+          let L = lanes.find((ln) => ln.every((x) => x.endDate < e.startDate || x.startDate > e.endDate));
+          if (!L) { L = []; lanes.push(L); }
+          L.push(e);
+        }
+        week++;
+      }
       const box = document.createElement('div');
       box.className = 'day' + (d.getUTCMonth() !== view.m ? ' other' : '') + (key === today ? ' today' : '') + (dow === 6 ? ' sat' : dow === 0 ? ' sun' : '');
       const num = document.createElement('div');
       num.className = 'num'; num.textContent = d.getUTCDate(); box.append(num);
-      for (const e of byDay.get(key) || []) {
-        const a = document.createElement('a');
-        const multi = e.endDate && e.endDate !== e.startDate;
-        a.className = 'event c-' + (e.category ? e.category.color : 'none') + (multi ? ' multi' : '');
-        if (e.time && key === e.startDate) { const t = document.createElement('span'); t.className = 't'; t.textContent = e.time; a.append(t); }
-        a.append(document.createTextNode(e.title));
-        a.title = (e.category ? `[${e.category.name}] ` : '') + e.title + (multi ? ` (${e.startDate} ~ ${e.endDate})` : '');
-        if (/^https:\/\//.test(e.url || '')) { a.href = e.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
-        box.append(a);
+      // 여러 날 일정: 칸마다 같은 줄 높이에 놓음 (빈 줄은 보이지 않는 자리 채움)
+      let last = -1;
+      const at = lanes.map((L) => L.find((e) => key >= e.startDate && key <= e.endDate));
+      at.forEach((e, n) => { if (e) last = n; });
+      for (let n = 0; n <= last; n++) {
+        let el;
+        if (at[n]) el = makeEvent(at[n], key);
+        else { el = document.createElement('div'); el.className = 'event ghost'; el.setAttribute('aria-hidden', 'true'); el.textContent = ' '; }
+        el.dataset.lane = week + ':' + n;
+        box.append(el);
       }
+      for (const e of byDay.get(key) || []) if (!isMulti(e)) box.append(makeEvent(e, key));
       frag.append(box);
     }
     $('calendar').replaceChildren(frag);
+    alignLanes();
     renderLegend();
   }
+
+  // 같은 주·같은 줄의 막대 조각을 모두 같은 높이로 맞춤 (그래야 칸끼리 한 줄로 이어짐)
+  function alignLanes() {
+    const els = [...document.querySelectorAll('#calendar [data-lane]')];
+    els.forEach((el) => { el.style.minHeight = ''; });
+    const max = new Map();
+    els.forEach((el) => { const h = el.getBoundingClientRect().height; if (h > (max.get(el.dataset.lane) || 0)) max.set(el.dataset.lane, h); });
+    els.forEach((el) => { el.style.minHeight = max.get(el.dataset.lane) + 'px'; });
+  }
+  let resizeTimer = null;
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(alignLanes, 150); });
 
   // 색 안내: 받은 일정에 있는 업무속성만, 많은 순서로 + '미지정' + '여러 날'
   function renderLegend() {
@@ -216,7 +275,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
     const chip = (text, cls) => { const s = document.createElement('span'); s.className = cls; s.textContent = text; box.append(s); };
     [...counts].sort((a, b) => b[1].n - a[1].n).forEach(([name, c]) => chip(name, 'c-' + c.color));
     if (none) chip('미지정', 'c-none');
-    if (multi) chip('▍여러 날 일정', 'c-none');
+    if (multi) chip('━ 여러 날 일정 (이어진 막대)', 'c-none');
   }
 
   const timeText = (iso) => { try { return new Date(iso).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Seoul' }); } catch { return ''; } };

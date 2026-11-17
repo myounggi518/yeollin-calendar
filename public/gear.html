@@ -103,6 +103,10 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
 /* 크게 보기: 노션 임베드 안에서만 보임, 누르면 전체 화면으로 열림 */
 .bigbtn{display:inline-block;background:#15243b;color:#fff;border:1px solid #15243b;border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;text-decoration:none;white-space:nowrap}
 .bigbtn[hidden]{display:none}
+/* 복사 · 붙여넣기 */
+.clipbtn{color:#7a4b00;border-color:#e3c96a;background:#fff8d6;font-weight:700}
+.clipbtn.paste{color:#fff;background:#c97a00;border-color:#c97a00;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.clipbtn[hidden]{display:none}
 /* 작성 완료 알림 */
 .notify{margin:14px 0 4px;background:#fff;border:1.5px solid #1f7a3d;border-radius:10px;padding:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .notify b{flex:1 0 100%;font-size:14px;color:#1f7a3d}
@@ -129,6 +133,8 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   <b id="evname" hidden></b>
   <span class="sum" id="sum"></span>
   <a id="bigBtn" class="noprint bigbtn" hidden target="_blank" rel="noopener">⤢ 크게 보기</a>
+  <button id="clipCopy" class="noprint clipbtn" hidden>📄 복사</button>
+  <button id="clipPaste" class="noprint clipbtn paste" hidden>📥 붙여넣기</button>
   <button id="copyBtn" class="noprint" hidden style="color:#2156a5;border-color:#9db8e3">📋 불러오기</button>
   <button id="reload" class="noprint" title="다른 사람이 바꾼 내용 다시 불러오기">새로고침</button>
   <button id="print" class="noprint">인쇄</button>
@@ -251,7 +257,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   let seq = 0;
   const folded = {};
   // ── 재고 제한 (음향 화면만). 테스트: 주소에 &stock=1 / 전체: 서버 GEAR_STOCK=all ──
-  let stockOn = false, stockData = null, hints = [], copyOn = false, csearchOn = false;
+  let stockOn = false, stockData = null, hints = [], copyOn = false, csearchOn = false, clipOn = false;
   const STOCK_MSG = '재고현황의 숫자를 넘어서면 선택할 수 없습니다';
   function availFor(r) {
     if (!stockOn || !stockData || !r.gear) return null;
@@ -318,6 +324,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
       stockOn = qp.get('stock') === '1' || !!(VIDEO ? d.vstockAll : d.stockAll);
       copyOn = qp.get('copy') === '1' || !!(VIDEO ? d.vcopyAll : d.copyAll);
       csearchOn = qp.get('csearch') === '1' || !!d.csearchAll;
+      clipOn = qp.get('clip') === '1' || !!d.clipAll;
       // 노션 임베드(iframe) 안에서만 「크게 보기」 — 같은 주소를 새 창(전체 화면)으로 엶
       let inFrame = true; try { inFrame = window.self !== window.top; } catch (e) { inFrame = true; }
       if ((qp.get('big') === '1' || d.bigAll) && inFrame) { const b = $('bigBtn'); b.href = location.href; b.hidden = false; }
@@ -619,7 +626,14 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
     const src = $('copySrc').value, id = eventId, btn = $('copyGo');
     if (!src || !id) { copyMsg('먼저 불러올 일정을 고르세요.', 'err'); return; }
     const srcName = $('copySrc').selectedOptions[0].textContent.replace(/ · \d+종$/, '');
-    btn.disabled = true; copyMsg('불러오는 중…');
+    btn.disabled = true;
+    try { await mergeFrom(src, srcName, copyMsg); } finally { btn.disabled = false; }
+  });
+
+  // 다른 일정(src)의 반출목록을 지금 일정에 합쳐 넣기 — 불러오기·붙여넣기 공용
+  async function mergeFrom(src, srcName, say) {
+    const id = eventId;
+    say('불러오는 중…');
     try {
       await Promise.all([...chains.values()]);
       const [d] = await Promise.all([api('/api/gear?event=' + src), loadStock(id)]);
@@ -643,16 +657,50 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
       render();
       for (let i = 0; i < todo.length; i++) {   // 한 줄씩 차례로 노션에 저장
         if (eventId !== id) return;
-        copyMsg(`노션에 저장하는 중… ${i + 1} / ${todo.length}`);
+        say(`노션에 저장하는 중… ${i + 1} / ${todo.length}`);
         await doSave(todo[i], todo[i]._tr);
       }
       let t = `✅ ${srcName}에서 ${added}종 불러옴`;
       if (skipped) t += ` · 이미 있던 ${skipped}종은 그대로`;
       if (cut.length) t += `\n⚠️ 재고 부족으로 줄임: ${cut.join(', ')}`;
-      copyMsg(t, cut.length ? 'err' : 'ok');
-      status(t.split('\n')[0]);
-    } catch (e) { copyMsg('불러오기 실패: ' + e.message, 'err'); }
-    finally { btn.disabled = false; }
+      status(t.split('\n')[0], !!cut.length);
+      say(t, cut.length ? 'err' : 'ok');
+    } catch (e) { say('불러오기 실패: ' + e.message, 'err'); }
+  }
+
+  // ── 📄 복사 · 📥 붙여넣기: 복사한 일정은 이 기기에 기억 (음향·영상 따로, 3일) ──
+  const CLIP_KEY = 'gearClip:' + SCREEN;
+  let clipMem = null;
+  const clipGet = () => {
+    let c = clipMem;
+    try { const v = localStorage.getItem(CLIP_KEY); if (v) c = JSON.parse(v); } catch (e) {}
+    if (c && Date.now() - (c.at || 0) > 3 * 24 * 3600 * 1000) c = null;
+    return c;
+  };
+  const clipSet = (c) => { clipMem = c; try { localStorage.setItem(CLIP_KEY, JSON.stringify(c)); } catch (e) {} };
+  const clipLabel = (c) => { const [, m, d] = (c.date || '').split('-').map(Number); return `${m ? m + '/' + d + ' ' : ''}${c.title}`; };
+  function paintClip() {
+    const c = clipGet(), p = $('clipPaste');
+    $('clipCopy').hidden = !clipOn || !eventId;
+    p.hidden = !clipOn || !eventId || !c || c.id === eventId;
+    if (!p.hidden) p.textContent = `📥 붙여넣기 (${clipLabel(c).slice(0, 18)})`;
+  }
+  setInterval(paintClip, 700);
+  $('clipCopy').addEventListener('click', () => {
+    const n = rows.filter((x) => blockOfRow(x) && (has(x) || (x.note || '').trim())).length;
+    if (!n) { status('복사할 반출목록이 없어요. 먼저 수량을 적어 주세요.', true); return; }
+    const ev = events.find((e) => e.id === eventId) || {};
+    clipSet({ id: eventId, title: ev.title || '', date: ev.startDate || '', count: n, at: Date.now() });
+    const b = $('clipCopy'); b.textContent = '✅ 복사됨'; setTimeout(() => { b.textContent = '📄 복사'; }, 2000);
+    status(`📄 ${clipLabel(clipGet() || { title: ev.title || '' })} 반출목록 ${n}종을 복사했어요. 세팅 일정에서 「📥 붙여넣기」를 누르세요.`);
+    paintClip();
+  });
+  $('clipPaste').addEventListener('click', async () => {
+    const c = clipGet(), b = $('clipPaste');
+    if (!c || !eventId || c.id === eventId) return;
+    b.disabled = true;
+    try { await mergeFrom(c.id, clipLabel(c), (t, cls) => status(t.split('\n')[0] + (t.includes('\n') ? ' ' + t.split('\n')[1] : ''), cls === 'err')); }
+    finally { b.disabled = false; }
   });
 
   $('event').addEventListener('change', (e) => openEvent(e.target.value));

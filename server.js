@@ -270,6 +270,8 @@ const VCOPY_ALL = process.env.GEAR_VCOPY === 'all';
 const CSEARCH_ALL = process.env.GEAR_CSEARCH === 'all';
 // 「크게 보기」 버튼(노션 임베드 안에서 전체 화면으로 열기): 모든 일정에서 켜짐. 끄려면 GEAR_BIG=off
 const BIG_ALL = process.env.GEAR_BIG !== 'off';
+// 「📄 복사 · 📥 붙여넣기」: GEAR_CLIP=all 이면 모든 일정, 아니면 주소에 &clip=1 이 있는 화면(테스트페이지)만
+const CLIP_ALL = process.env.GEAR_CLIP === 'all';
 const stock = require('./stock')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY], AppError });
 const overlaps = (a, b) => a.startDate <= b.endDate && b.startDate <= a.endDate;
 const evLabel = (e) => { const [, m, d] = e.startDate.split('-').map(Number); return `${m}/${d} ${e.title}`; };
@@ -595,7 +597,7 @@ async function handle(req, res) {
         const from = new Date(Date.now() + KST_OFFSET_MS - 7 * 864e5).toISOString().slice(0, 10);
         const events = cal.events.filter((e) => e.endDate >= from)
           .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, category: e.category && e.category.name }));
-        return sendJson(res, 200, { catalog, events, stockAll: STOCK_ALL, copyAll: COPY_ALL, vstockAll: VSTOCK_ALL, vcopyAll: VCOPY_ALL, csearchAll: CSEARCH_ALL, bigAll: BIG_ALL });
+        return sendJson(res, 200, { catalog, events, stockAll: STOCK_ALL, copyAll: COPY_ALL, vstockAll: VSTOCK_ALL, vcopyAll: VCOPY_ALL, csearchAll: CSEARCH_ALL, bigAll: BIG_ALL, clipAll: CLIP_ALL });
       }
       if (req.method === 'GET' && url.pathname === '/api/gear/sources') {
         // 검색형: q 없으면 최근 10개, q 있으면 행사명 검색(기간 상관없이, 최대 30개)

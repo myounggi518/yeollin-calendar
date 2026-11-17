@@ -2,7 +2,7 @@
 /*
  * 열린기획 월간 일정표 — Notion 읽기 전용 서버 (v2)
  * - 외부 패키지 없이 Node.js 20+ 기본 기능만 사용합니다.
- * - 원본 월간일정표에는 "조회(query)"만 합니다. 쓰기는 「🏗️ 구조물 체크 기록」 DB에만, 그 DB 전용 키로 합니다.
+ * - 원본 월간일정표에는 "조회(query)"만 합니다. 예외: 기간 행사의 「날짜별 근무」 줄 새로 만들기(쓰기 키). 그 밖의 쓰기는 「🏗️ 구조물 체크 기록」·반출장비 DB에만 합니다.
  */
 const http = require('node:http');
 const fs = require('node:fs');
@@ -479,16 +479,18 @@ async function getRoster(month, test = false) {
   });
 }
 
-// ── 날별 근무 (테스트 DB만): 행사 기간의 날짜별 근무 줄 보기·만들기 ──
+// ── 날별 근무: 기간 행사의 날짜별 근무 줄 보기·만들기 (근무 DB·테스트 DB) ──
 const datesBetween = (a, b) => { const out = []; for (let t = Date.parse(a + 'T00:00:00Z'), e = Date.parse(b + 'T00:00:00Z'); t <= e && out.length < 62; t += 864e5) out.push(new Date(t).toISOString().slice(0, 10)); return out; };
 async function loadDays(eventId) {
   const p = await notionRequest('GET', `/v1/pages/${eventId}`, null, NOTION_API_KEY);
-  if (gear.normId(p.parent && p.parent.data_source_id) !== gear.normId(TEST_DATA_SOURCE_ID)) throw new AppError('BAD_REQUEST');   // 테스트 DB 일정만
+  const ds = gear.normId(p.parent && p.parent.data_source_id);   // 근무 DB(원본) 또는 테스트 DB의 일정만
+  if (ds !== gear.normId(DATA_SOURCE_ID) && ds !== gear.normId(TEST_DATA_SOURCE_ID)) throw new AppError('BAD_REQUEST');
+  const dsId = ds === gear.normId(TEST_DATA_SOURCE_ID) ? TEST_DATA_SOURCE_ID : DATA_SOURCE_ID;
   const d = p.properties[DATE_PROP] && p.properties[DATE_PROP].date;
   if (!d || !d.start) throw new AppError('BAD_REQUEST');
   const start = toKstDate(d.start), end = d.end ? toKstDate(d.end) : start;
   const title = readText(p.properties[TITLE_PROP]).trim() || '제목 없음';
-  const q = await notionQuery({ page_size: 100, filter: { property: PARENT_PROP, relation: { contains: p.id } } }, TEST_DATA_SOURCE_ID);
+  const q = await notionQuery({ page_size: 100, filter: { property: PARENT_PROP, relation: { contains: p.id } } }, dsId);
   const rows = q.results.map((r) => ({
     id: r.id, url: r.url,
     date: toKstDate(r.properties[DATE_PROP] && r.properties[DATE_PROP].date && r.properties[DATE_PROP].date.start),
@@ -496,7 +498,7 @@ async function loadDays(eventId) {
   }));
   const days = datesBetween(start, end).map((date) => ({ date, rows: rows.filter((r) => r.date === date) }));
   const outside = rows.filter((r) => r.date < start || r.date > end);
-  return { event: { id: p.id, url: p.url, title, start, end, category: readCategory(p.properties[CATEGORY_PROP]) }, days, outside };
+  return { event: { id: p.id, url: p.url, title, start, end, category: readCategory(p.properties[CATEGORY_PROP]), place: readText(p.properties['장소']) }, days, outside, dsId };
 }
 async function createDays(eventId) {
   const info = await loadDays(eventId);
@@ -509,9 +511,11 @@ async function createDays(eventId) {
       [PARENT_PROP]: { relation: [{ id: info.event.id }] },
     };
     if (info.event.category) props[CATEGORY_PROP] = { select: { name: info.event.category.name } };
-    await notionRequest('POST', '/v1/pages', { parent: { data_source_id: TEST_DATA_SOURCE_ID }, properties: props }, NOTION_WRITE_KEY);
+    if (info.event.place) props['장소'] = { rich_text: [{ type: 'text', text: { content: info.event.place.slice(0, 200) } }] };
+    // 쓰기는 이것뿐: 그 행사에 연결된 「일일근무」 줄을 새로 만들기 (기존 일정은 고치거나 지우지 않음)
+    await notionRequest('POST', '/v1/pages', { parent: { data_source_id: info.dsId }, properties: props }, NOTION_WRITE_KEY);
   }
-  for (const k of [...cacheStore.keys()]) if (k.startsWith('t:')) cacheStore.delete(k);
+  cacheStore.clear();   // 달력·근무표에 바로 반영
   return { created: missing.length, ...(await loadDays(eventId)) };
 }
 

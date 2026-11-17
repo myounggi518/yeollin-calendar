@@ -38,7 +38,7 @@ button:disabled{opacity:.45;cursor:default}
   <button id="make" hidden>날짜별 근무 만들기</button>
   <div id="status">불러오는 중…</div>
   <div id="list"></div>
-  <p class="note">날짜를 눌러 그날의 <b>근무자·출근시간·차량</b>을 적어 주세요. 오늘·내일 근무배치와 월간 근무표는 이 날짜별 근무를 기준으로 표시됩니다.</p>
+  <p class="note">근무 칸은 일정을 시작~종료일로 올리면 1분 안에 자동으로 생기고, 처음 적은 근무자가 기본으로 들어갑니다. 바뀌는 날만 날짜를 눌러 <b>근무자·출근시간·차량</b>을 고쳐 주세요(주간일정 카드에서 고쳐도 됩니다). 고친 날은 그대로 유지되고, 오늘·내일 근무배치와 월간 근무표에 바로 반영됩니다.</p>
 </main>
 <script>
 (() => {
@@ -69,7 +69,7 @@ button:disabled{opacity:.45;cursor:default}
       : `${md(d.event.start)}(${W[wd(d.event.start)]}) ~ ${md(d.event.end)}(${W[wd(d.event.end)]}) · ${d.days.length}일`;
     const missing = d.days.filter((x) => !x.rows.length).length;
     $('make').hidden = !missing;
-    $('make').textContent = missing === d.days.length ? `날짜별 근무 만들기 (${missing}일)` : `빠진 날짜 근무 만들기 (${missing}일)`;
+    $('make').textContent = `근무 칸 지금 만들기 (${missing}일)`;   // 보통은 1분 안에 자동으로 생김
     const list = $('list'); list.replaceChildren();
     for (const day of d.days) {
       const box = document.createElement('div');
@@ -85,7 +85,7 @@ button:disabled{opacity:.45;cursor:default}
         who.textContent = (day.rows.length > 1 ? `${i + 1}) ` : '') + (r.workers || '근무자 미정');
         body.append(who);
         if (r.time) { const t = document.createElement('div'); t.className = 't'; t.textContent = '출근 ' + r.time; body.append(t); }
-        const a = document.createElement('a'); a.className = 'open'; a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = '근무 적기 ›';
+        const a = document.createElement('a'); a.className = 'open'; a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = '근무자 바꾸기 ›';
         body.append(a);
       });
       box.append(dd, body); list.append(box);
@@ -105,7 +105,7 @@ button:disabled{opacity:.45;cursor:default}
     try {
       const d = await api('/api/days/create?event=' + event, { method: 'POST' });
       render(d);
-      status(`${d.created}일치 근무 줄을 만들었습니다. 날짜를 눌러 근무자를 적어 주세요.`);
+      status(`${d.created}일치 근무 칸을 만들었습니다.`);
     } catch (e) { status(e.message, true); }
     finally { $('make').disabled = false; }
   };

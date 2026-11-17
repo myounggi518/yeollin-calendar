@@ -272,6 +272,13 @@ const CSEARCH_ALL = process.env.GEAR_CSEARCH === 'all';
 const BIG_ALL = process.env.GEAR_BIG !== 'off';
 // 「📄 복사 · 📥 붙여넣기」: 모든 일정에서 켜짐. 끄려면 GEAR_CLIP=off
 const CLIP_ALL = process.env.GEAR_CLIP !== 'off';
+// 기간 행사 → 날짜별 근무 칸 자동 동기화 (1분마다). 쓰기 키가 있어야 동작
+const daySync = require('./days-sync')({
+  notionRequest, writeKey: NOTION_WRITE_KEY, sources: [DATA_SOURCE_ID, TEST_DATA_SOURCE_ID],
+  baseUrl: (process.env.RENDER_EXTERNAL_URL || process.env.SELF_URL || 'https://yeollin-calendar.onrender.com').replace(/\/$/, ''),
+  onChange: () => cacheStore.clear(),
+});
+if (NOTION_WRITE_KEY && process.env.DAY_SYNC !== 'off') daySync.start(Number(process.env.DAY_SYNC_MS) || 60 * 1000);
 const stock = require('./stock')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY], AppError });
 const overlaps = (a, b) => a.startDate <= b.endDate && b.startDate <= a.endDate;
 const evLabel = (e) => { const [, m, d] = e.startDate.split('-').map(Number); return `${m}/${d} ${e.title}`; };
@@ -500,23 +507,13 @@ async function loadDays(eventId) {
   const outside = rows.filter((r) => r.date < start || r.date > end);
   return { event: { id: p.id, url: p.url, title, start, end, category: readCategory(p.properties[CATEGORY_PROP]), place: readText(p.properties['장소']) }, days, outside, dsId };
 }
+// 「빠진 날짜 근무 만들기」(수동) — 자동 동기화를 바로 한 번 돌림
 async function createDays(eventId) {
-  const info = await loadDays(eventId);
-  const missing = info.days.filter((d) => !d.rows.length).map((d) => d.date);
-  for (const date of missing) {
-    const props = {
-      [TITLE_PROP]: { title: [{ type: 'text', text: { content: info.event.title } }] },
-      [DATE_PROP]: { date: { start: date } },
-      [KIND_PROP]: { select: { name: KIND_DAY } },
-      [PARENT_PROP]: { relation: [{ id: info.event.id }] },
-    };
-    if (info.event.category) props[CATEGORY_PROP] = { select: { name: info.event.category.name } };
-    if (info.event.place) props['장소'] = { rich_text: [{ type: 'text', text: { content: info.event.place.slice(0, 200) } }] };
-    // 쓰기는 이것뿐: 그 행사에 연결된 「일일근무」 줄을 새로 만들기 (기존 일정은 고치거나 지우지 않음)
-    await notionRequest('POST', '/v1/pages', { parent: { data_source_id: info.dsId }, properties: props }, NOTION_WRITE_KEY);
-  }
-  cacheStore.clear();   // 달력·근무표에 바로 반영
-  return { created: missing.length, ...(await loadDays(eventId)) };
+  const before = await loadDays(eventId);
+  await daySync.syncAll();
+  const after = await loadDays(eventId);
+  const count = (d) => d.days.reduce((n, x) => n + x.rows.length, 0);
+  return { created: Math.max(0, count(after) - count(before)), ...after };
 }
 
 // ── 요청 처리 ───────────────────────────────────────────────────────

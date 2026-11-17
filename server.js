@@ -18,6 +18,11 @@ const NOTION_API_BASE = process.env.NOTION_API_BASE || 'https://api.notion.com';
 // 구조물 체크용(쓰기): 「🏗️ 구조물 체크 기록」 DB에만 연결된 별도 통합 키. 없으면 구조물 체크 기능은 꺼집니다.
 const NOTION_WRITE_KEY = process.env.NOTION_WRITE_KEY || '';
 const STRUCT_DATA_SOURCE_ID = process.env.STRUCT_DATA_SOURCE_ID || '18001b84-b4c0-40ae-ba4d-f92ce77bcd7c';
+// 기간 행사 + 날별 근무 테스트: 주소에 ?test=1 이 있는 화면만 테스트 DB(테스트페이지 「근무(테스트)」)를 읽습니다.
+// 날별 근무 줄 만들기(쓰기)는 이 테스트 DB에만 합니다. 원본 월간일정표에는 쓰지 않습니다.
+const TEST_DATA_SOURCE_ID = process.env.TEST_DATA_SOURCE_ID || '41bd2f7f-5131-81fc-b5c9-000bfe200727';
+const KIND_PROP = '구분', PARENT_PROP = '상위 행사', DAYS_PROP = '날별 근무';
+const KIND_EVENT = '행사', KIND_DAY = '일일근무';
 const NOTION_VERSION = '2025-09-03';
 const TITLE_PROP = '일정명 / Tasks';
 const DATE_PROP = '날짜';
@@ -39,6 +44,7 @@ const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'))
 const ROSTER_HTML = fs.readFileSync(path.join(__dirname, 'public', 'roster.html'));
 const CLOCK_HTML = fs.readFileSync(path.join(__dirname, 'public', 'clock.html'));
 const GEAR_HTML = fs.readFileSync(path.join(__dirname, 'public', 'gear.html'));
+const DAYS_HTML = fs.readFileSync(path.join(__dirname, 'public', 'days.html'));
 
 // ── 공통 도구 ───────────────────────────────────────────────────────
 class AppError extends Error { constructor(code) { super(code); this.code = code; } }
@@ -182,8 +188,8 @@ async function notionRequest(method, apiPath, body, key, attempt = 0, version = 
   if (!data) throw new AppError('NOTION_ERROR');
   return data;
 }
-async function notionQuery(body) {
-  const data = await notionRequest('POST', `/v1/data_sources/${encodeURIComponent(DATA_SOURCE_ID)}/query`, body, NOTION_API_KEY);
+async function notionQuery(body, ds = DATA_SOURCE_ID) {
+  const data = await notionRequest('POST', `/v1/data_sources/${encodeURIComponent(ds)}/query`, body, NOTION_API_KEY);
   if (!Array.isArray(data.results)) throw new AppError('NOTION_ERROR');
   return data;
 }
@@ -373,6 +379,7 @@ function readCategory(prop) {
   return { name: String(opt.name).slice(0, 40), color: NOTION_COLORS.has(opt.color) ? opt.color : 'default' };
 }
 
+const relIds = (prop) => (prop && Array.isArray(prop.relation) ? prop.relation.map((r) => r.id) : []);
 // 근무자(다중선택/선택/글자) → 한 줄 글자. 근무배치표 이름 찾기에 사용
 function readText(prop) {
   if (!prop) return '';
@@ -385,7 +392,7 @@ function readText(prop) {
 }
 
 // w = { from, until(미포함), queryFrom } 범위와 겹치는 일정 (근무자·개인휴무 포함)
-async function loadFromNotion(w) {
+async function loadFromNotion(w, test = false) {
   const filter = { and: [
     { property: DATE_PROP, date: { on_or_after: w.queryFrom } },
     { property: DATE_PROP, date: { before: w.until } },
@@ -395,7 +402,7 @@ async function loadFromNotion(w) {
   for (let i = 0; i < MAX_PAGES; i++) {
     const body = { page_size: 100, filter };
     if (cursor) body.start_cursor = cursor;
-    const data = await notionQuery(body);
+    const data = await notionQuery(body, test ? TEST_DATA_SOURCE_ID : DATA_SOURCE_ID);
     pages.push(...data.results);
     if (!data.has_more) { cursor = null; break; }
     cursor = data.next_cursor;
@@ -416,6 +423,10 @@ async function loadFromNotion(w) {
       category: readCategory(p.properties[CATEGORY_PROP]),
       workers: readText(p.properties[WORKERS_PROP]),
       personalOff: readText(p.properties[PERSONAL_OFF_PROP]),
+      // 구분(행사/일일근무)과 연결: 원본 DB에는 이 칸이 없어 빈 값이 됩니다(지금과 똑같이 동작)
+      kind: readText(p.properties[KIND_PROP]),
+      parent: relIds(p.properties[PARENT_PROP])[0] || null,
+      dayCount: relIds(p.properties[DAYS_PROP]).length,
     });
   }
   events.sort((a, b) => (a.startDate.localeCompare(b.startDate)) || (a.time.localeCompare(b.time)) || a.title.localeCompare(b.title, 'ko'));
@@ -442,26 +453,64 @@ function staleFor(key) {
 setInterval(() => { const now = Date.now(); for (const [k, c] of cacheStore) if (now - c.at > STALE_MAX_MS) cacheStore.delete(k); }, 60 * 60 * 1000).unref();
 
 // 달력용: 근무자 등 달력에 필요 없는 칸은 빼고 보냄
-async function getEvents() {
+// 달력·반출표용: 날별 근무 줄은 빼고 행사(기간 일정)만 → 기간 막대 하나, 반출표·재고도 행사 기간 전체 기준
+async function getEvents(test = false) {
   const w = kstWindow();
-  const key = `cal:${w.from}`;
+  const key = `${test ? 't:' : ''}cal:${w.from}`;
   return cached(key, async () => {
-    const d = await loadFromNotion(w);
-    return { ...d, events: d.events.map(({ workers, personalOff, ...e }) => e) };
+    const d = await loadFromNotion(w, test);
+    return { ...d, events: d.events.filter((e) => e.kind !== KIND_DAY).map(({ workers, personalOff, ...e }) => e) };
   });
 }
 
 // 근무배치표용: 한 달 (그 달에 걸친 여러 날 일정 포함)
-async function getRoster(month) {
+// 근무배치표용: 날별 근무 줄이 있는 행사는 행사 줄 대신 날별 근무 줄로 셈 → 날마다 다른 근무자가 정확히 들어감
+async function getRoster(month, test = false) {
   const [y, m] = month.split('-').map(Number);
   const w = { from: ymd(y, m - 1), until: ymd(y, m), queryFrom: ymd(y, m - 3) };
-  return cached(`roster:${month}`, async () => {
+  return cached(`${test ? 't:' : ''}roster:${month}`, async () => {
     const [d, struct] = await Promise.all([
-      loadFromNotion(w),
-      STRUCT_ENABLED ? loadStructMonth(month).catch((e) => { console.error('구조물 기록 조회 실패:', e.code || e.message); return undefined; }) : null,
+      loadFromNotion(w, test),
+      (STRUCT_ENABLED && !test) ? loadStructMonth(month).catch((e) => { console.error('구조물 기록 조회 실패:', e.code || e.message); return undefined; }) : null,
     ]);
-    return buildRoster(month, d, Date.now(), struct);
+    return buildRoster(month, { ...d, events: d.events.filter((e) => !(e.kind === KIND_EVENT && e.dayCount > 0)) }, Date.now(), struct);
   });
+}
+
+// ── 날별 근무 (테스트 DB만): 행사 기간의 날짜별 근무 줄 보기·만들기 ──
+const datesBetween = (a, b) => { const out = []; for (let t = Date.parse(a + 'T00:00:00Z'), e = Date.parse(b + 'T00:00:00Z'); t <= e && out.length < 62; t += 864e5) out.push(new Date(t).toISOString().slice(0, 10)); return out; };
+async function loadDays(eventId) {
+  const p = await notionRequest('GET', `/v1/pages/${eventId}`, null, NOTION_API_KEY);
+  if (gear.normId(p.parent && p.parent.data_source_id) !== gear.normId(TEST_DATA_SOURCE_ID)) throw new AppError('BAD_REQUEST');   // 테스트 DB 일정만
+  const d = p.properties[DATE_PROP] && p.properties[DATE_PROP].date;
+  if (!d || !d.start) throw new AppError('BAD_REQUEST');
+  const start = toKstDate(d.start), end = d.end ? toKstDate(d.end) : start;
+  const title = readText(p.properties[TITLE_PROP]).trim() || '제목 없음';
+  const q = await notionQuery({ page_size: 100, filter: { property: PARENT_PROP, relation: { contains: p.id } } }, TEST_DATA_SOURCE_ID);
+  const rows = q.results.map((r) => ({
+    id: r.id, url: r.url,
+    date: toKstDate(r.properties[DATE_PROP] && r.properties[DATE_PROP].date && r.properties[DATE_PROP].date.start),
+    workers: readText(r.properties[WORKERS_PROP]), time: readText(r.properties['출근시간']),
+  }));
+  const days = datesBetween(start, end).map((date) => ({ date, rows: rows.filter((r) => r.date === date) }));
+  const outside = rows.filter((r) => r.date < start || r.date > end);
+  return { event: { id: p.id, url: p.url, title, start, end, category: readCategory(p.properties[CATEGORY_PROP]) }, days, outside };
+}
+async function createDays(eventId) {
+  const info = await loadDays(eventId);
+  const missing = info.days.filter((d) => !d.rows.length).map((d) => d.date);
+  for (const date of missing) {
+    const props = {
+      [TITLE_PROP]: { title: [{ type: 'text', text: { content: info.event.title } }] },
+      [DATE_PROP]: { date: { start: date } },
+      [KIND_PROP]: { select: { name: KIND_DAY } },
+      [PARENT_PROP]: { relation: [{ id: info.event.id }] },
+    };
+    if (info.event.category) props[CATEGORY_PROP] = { select: { name: info.event.category.name } };
+    await notionRequest('POST', '/v1/pages', { parent: { data_source_id: TEST_DATA_SOURCE_ID }, properties: props }, NOTION_WRITE_KEY);
+  }
+  for (const k of [...cacheStore.keys()]) if (k.startsWith('t:')) cacheStore.delete(k);
+  return { created: missing.length, ...(await loadDays(eventId)) };
 }
 
 // ── 요청 처리 ───────────────────────────────────────────────────────
@@ -504,18 +553,45 @@ async function handle(req, res) {
     return res.end(ROSTER_HTML);
   }
 
+  // ── 날별 근무 (테스트) ──
+  if (req.method === 'GET' && ['/days', '/days.html'].includes(url.pathname)) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(DAYS_HTML);
+  }
+  if (url.pathname === '/api/days' || url.pathname === '/api/days/create') {
+    if (limited(`days:${ip}`, 30, 60 * 1000)) return sendError(res, 'TOO_MANY');
+    if (!NOTION_API_KEY || !NOTION_WRITE_KEY) return sendError(res, 'NOT_CONFIGURED');
+    if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
+    const eventId = gear.normId(url.searchParams.get('event'));
+    if (!gear.isId(eventId)) return sendError(res, 'BAD_REQUEST');
+    try {
+      if (req.method === 'GET' && url.pathname === '/api/days') return sendJson(res, 200, await loadDays(eventId));
+      if (req.method === 'POST' && url.pathname === '/api/days/create') {
+        const r = await createDays(eventId);
+        console.log(`날별 근무 만들기: ${r.event.title} (${r.created}줄)`);
+        return sendJson(res, 200, r);
+      }
+      return sendError(res, 'NOT_FOUND');
+    } catch (e) {
+      const code = e instanceof AppError ? e.code : 'NOTION_ERROR';
+      if (!(e instanceof AppError)) console.error('Unexpected:', e);
+      return sendError(res, code);
+    }
+  }
+
   // ── 반출장비 ──
   if (req.method === 'GET' && ['/gear', '/gear.html', '/vgear'].includes(url.pathname)) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     return res.end(GEAR_HTML);
   }
   if (url.pathname.startsWith('/api/gear')) {
+    const test = url.searchParams.get('test') === '1';
     if (limited(`gear:${ip}`, 120, 60 * 1000)) return sendError(res, 'TOO_MANY');
     if (!STRUCT_ENABLED || !NOTION_API_KEY) return sendError(res, 'STRUCT_DISABLED');
     if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
     try {
       if (req.method === 'GET' && url.pathname === '/api/gear/init') {
-        const [catalog, cal] = await Promise.all([gear.getCatalog(), getEvents()]);
+        const [catalog, cal] = await Promise.all([gear.getCatalog(), getEvents(test)]);
         const from = new Date(Date.now() + KST_OFFSET_MS - 7 * 864e5).toISOString().slice(0, 10);
         const events = cal.events.filter((e) => e.endDate >= from)
           .map((e) => ({ id: gear.normId(e.id), title: e.title, startDate: e.startDate, endDate: e.endDate, category: e.category && e.category.name }));
@@ -525,7 +601,7 @@ async function handle(req, res) {
         // 검색형: q 없으면 최근 10개, q 있으면 행사명 검색(기간 상관없이, 최대 30개)
         const screen = url.searchParams.get('screen') === '영상' ? '영상' : '음향';
         if (!url.searchParams.has('q')) {   // 예전 방식: 달력 범위(지난달~다음 달) 안에서 반출목록이 적힌 일정 전부
-          const [all, cal] = await Promise.all([gear.sourceCounts(), getEvents()]);
+          const [all, cal] = await Promise.all([gear.sourceCounts(), getEvents(test)]);
           const counts = all[screen];
           const list = cal.events.filter((e) => counts[gear.normId(e.id)])
             .map((e) => ({ id: gear.normId(e.id), title: e.title, date: e.startDate, startDate: e.startDate, endDate: e.endDate, count: counts[gear.normId(e.id)] }))
@@ -545,7 +621,7 @@ async function handle(req, res) {
         return sendJson(res, 200, { rows: await gear.listRows(eventId) });
       }
       if (req.method === 'GET' && url.pathname === '/api/gear/stock') {
-        const cal = await getEvents();
+        const cal = await getEvents(test);
         const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
         if (!ev) return sendError(res, 'BAD_REQUEST');
         return sendJson(res, 200, await stockState(ev, cal));
@@ -555,10 +631,10 @@ async function handle(req, res) {
         const screen = body && body.screen === '영상' ? '영상' : '음향';
         const name = String((body && body.name) || '').trim().slice(0, 30);
         if (!AUTHORS.includes(name)) return sendError(res, 'BAD_REQUEST');
-        const cal = await getEvents();
+        const cal = await getEvents(test);
         const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
         if (!ev) return sendError(res, 'BAD_REQUEST');
-        await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)), body.test === true, NOTIFY_HIDE_ALL || body.hide === true);
+        await notifyGear(ev, screen, name, Math.max(0, Math.min(999, Number(body.count) || 0)), test || body.test === true, NOTIFY_HIDE_ALL || body.hide === true);   // 테스트 DB 일정은 본인에게만
         console.log(`반출목록 알림: ${ev.title} (${screen}) by ${name}`);
         return sendJson(res, 200, { ok: true });
       }
@@ -569,7 +645,7 @@ async function handle(req, res) {
         return sendJson(res, 200, { ok: true, removed: n });
       }
       if (req.method === 'POST' && url.pathname === '/api/gear') {
-        const cal = await getEvents();
+        const cal = await getEvents(test);
         const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
         if (!ev) return sendError(res, 'BAD_REQUEST');
         const body = (await readJson(req)) || {};
@@ -618,6 +694,7 @@ async function handle(req, res) {
 
   // 구조물 체크 저장: { name, date: 'YYYY-MM-DD', checked: true|false }
   if (req.method === 'POST' && url.pathname === '/api/structure') {
+    if (url.searchParams.get('test') === '1') return sendError(res, 'STRUCT_DISABLED');   // 테스트 화면에서는 구조물 기록을 남기지 않음
     if (limited(`struct:${ip}`, 30, 60 * 1000)) return sendError(res, 'TOO_MANY');
     if (!STRUCT_ENABLED) return sendError(res, 'STRUCT_DISABLED');
     if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
@@ -647,13 +724,14 @@ async function handle(req, res) {
     if (!NOTION_API_KEY) return sendError(res, 'NOT_CONFIGURED');
     if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
     let key, load;
+    const test = url.searchParams.get('test') === '1';
     if (isEvents) {
-      key = `cal:${kstWindow().from}`; load = getEvents;
+      key = `${test ? 't:' : ''}cal:${kstWindow().from}`; load = () => getEvents(test);
     } else {
       const month = String(url.searchParams.get('month') || '');
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return sendError(res, 'BAD_REQUEST');
       if (!rosterMonthAllowed(month, Date.now())) return sendJson(res, 400, { error: `근무배치표는 ${ROSTER_START_MONTH}부터 내년 12월까지 볼 수 있습니다.`, code: 'MONTH_OUT_OF_RANGE' });
-      key = `roster:${month}`; load = () => getRoster(month);
+      key = `${test ? 't:' : ''}roster:${month}`; load = () => getRoster(month, test);
     }
     try {
       return sendJson(res, 200, await load());

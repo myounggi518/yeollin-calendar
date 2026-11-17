@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="format-detection" content="telephone=no">
+<title>날짜별 근무</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#15243b;background:#f4f7fb;-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+main{max-width:640px;margin:auto}
+h1{font-size:17px;margin:0 0 2px}
+.sub{font-size:13px;color:#5e6a7e;margin:0 0 10px}
+#status{font-size:13px;color:#5e6a7e;min-height:18px;margin:6px 0}
+#status.err{color:#b42318}
+.day{display:flex;gap:10px;align-items:flex-start;background:#fff;border:1px solid #dbe1e9;border-radius:10px;padding:10px 12px;margin:0 0 8px}
+.d{min-width:64px;font-weight:750}
+.d small{display:block;font-weight:500;color:#6b7686;font-size:12px}
+.body{flex:1;min-width:0;font-size:14px;line-height:1.45}
+.who{font-weight:650;overflow-wrap:anywhere}
+.empty{color:#9a5b00}
+.none{color:#b42318}
+.t{color:#4b5563;font-size:13px}
+a.open{display:inline-block;margin-top:4px;font-size:13px;color:#225bc8;text-decoration:none}
+.sat .d{color:#316abc}.sun .d{color:#d64949}
+.today{border-color:#225bc8;box-shadow:inset 3px 0 0 #225bc8}
+button{font:inherit;width:100%;padding:13px;border-radius:10px;border:0;background:#225bc8;color:#fff;font-weight:700;margin:4px 0 10px;cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.45;cursor:default}
+.note{font-size:12px;color:#6b7686;margin:8px 0 0;line-height:1.5}
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">날짜별 근무</h1>
+  <p class="sub" id="range"></p>
+  <button id="make" hidden>날짜별 근무 만들기</button>
+  <div id="status">불러오는 중…</div>
+  <div id="list"></div>
+  <p class="note">날짜를 눌러 그날의 <b>근무자·출근시간·차량</b>을 적어 주세요. 오늘·내일 근무배치와 월간 근무표는 이 날짜별 근무를 기준으로 표시됩니다.</p>
+</main>
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+  const qp = new URLSearchParams(location.search);
+  const event = (qp.get('event') || '').replace(/-/g, '').toLowerCase();
+  const KST = 9 * 3600e3;
+  const today = new Date(Date.now() + KST).toISOString().slice(0, 10);
+  const W = '일월화수목금토';
+  const md = (s) => { const [, m, d] = s.split('-').map(Number); return `${m}/${d}`; };
+  const wd = (s) => new Date(s + 'T00:00:00Z').getUTCDay();
+  const status = (m, err) => { const s = $('status'); s.textContent = m || ''; s.className = err ? 'err' : ''; };
+
+  async function api(path, opt) {
+    let r;
+    try { r = await fetch(path, { cache: 'no-store', ...opt }); }
+    catch { throw new Error(navigator.onLine === false ? '인터넷 연결이 끊겨 있습니다.' : '서버에 연결하지 못했습니다.'); }
+    let d = null; try { d = await r.json(); } catch {}
+    if (!r.ok || !d) throw new Error((d && d.error) || `서버 오류 (${r.status})`);
+    return d;
+  }
+
+  function render(d) {
+    $('title').textContent = d.event.title;
+    $('range').textContent = d.event.start === d.event.end
+      ? `${md(d.event.start)}(${W[wd(d.event.start)]}) 하루 일정`
+      : `${md(d.event.start)}(${W[wd(d.event.start)]}) ~ ${md(d.event.end)}(${W[wd(d.event.end)]}) · ${d.days.length}일`;
+    const missing = d.days.filter((x) => !x.rows.length).length;
+    $('make').hidden = !missing;
+    $('make').textContent = missing === d.days.length ? `날짜별 근무 만들기 (${missing}일)` : `빠진 날짜 근무 만들기 (${missing}일)`;
+    const list = $('list'); list.replaceChildren();
+    for (const day of d.days) {
+      const box = document.createElement('div');
+      const w = wd(day.date);
+      box.className = 'day' + (w === 6 ? ' sat' : w === 0 ? ' sun' : '') + (day.date === today ? ' today' : '');
+      const dd = document.createElement('div'); dd.className = 'd';
+      dd.textContent = md(day.date); const sm = document.createElement('small'); sm.textContent = W[w] + (day.date === today ? ' · 오늘' : ''); dd.append(sm);
+      const body = document.createElement('div'); body.className = 'body';
+      if (!day.rows.length) { const n = document.createElement('div'); n.className = 'none'; n.textContent = '근무 줄 없음'; body.append(n); }
+      day.rows.forEach((r, i) => {
+        const who = document.createElement('div');
+        who.className = r.workers ? 'who' : 'who empty';
+        who.textContent = (day.rows.length > 1 ? `${i + 1}) ` : '') + (r.workers || '근무자 미정');
+        body.append(who);
+        if (r.time) { const t = document.createElement('div'); t.className = 't'; t.textContent = '출근 ' + r.time; body.append(t); }
+        const a = document.createElement('a'); a.className = 'open'; a.href = r.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = '근무 적기 ›';
+        body.append(a);
+      });
+      box.append(dd, body); list.append(box);
+    }
+    if (d.outside && d.outside.length) status(`행사 기간 밖의 근무 줄 ${d.outside.length}개가 있습니다. 행사 날짜를 확인해 주세요.`, true);
+    else status('');
+  }
+
+  async function load() {
+    if (!/^[0-9a-f]{32}$/.test(event)) { status('일정 정보가 없습니다. 노션 일정 페이지에서 열어 주세요.', true); return; }
+    try { render(await api('/api/days?event=' + event)); }
+    catch (e) { status(e.message, true); }
+  }
+
+  $('make').onclick = async () => {
+    $('make').disabled = true; status('날짜별 근무 줄을 만드는 중…');
+    try {
+      const d = await api('/api/days/create?event=' + event, { method: 'POST' });
+      render(d);
+      status(`${d.created}일치 근무 줄을 만들었습니다. 날짜를 눌러 근무자를 적어 주세요.`);
+    } catch (e) { status(e.message, true); }
+    finally { $('make').disabled = false; }
+  };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') load(); });
+  load();
+})();
+</script>
+</body>
+</html>

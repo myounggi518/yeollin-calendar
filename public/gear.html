@@ -298,8 +298,9 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
 
   const status = (msg, err) => { const s = $('status'); s.textContent = msg || ''; s.className = err ? 'err' : ''; };
 
+  const TEST = new URLSearchParams(location.search).get('test') === '1';   // 테스트: 테스트 DB의 일정 기준
   async function api(path, opt) {
-    const r = await fetch(path, opt);
+    const r = await fetch(TEST ? path + (path.includes('?') ? '&' : '?') + 'test=1' : path, opt);
     let d = null; try { d = await r.json(); } catch {}
     if (!r.ok) { const e = new Error((d && d.error) || '서버 오류 (' + r.status + ')'); e.data = d; throw e; }
     return d;

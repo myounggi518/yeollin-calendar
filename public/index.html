@@ -96,7 +96,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   'use strict';
   const POLL_MS = window.YEOLLIN_POLL_MS || 5 * 60 * 1000;   // 5분 자동 갱신
   const RESUME_MS = 60 * 1000;                                // 다시 화면에 돌아왔을 때, 1분 넘었으면 갱신
-  const CACHE_KEY = 'yeollin-cal-cache-v2';
+  // 테스트: 주소에 ?test=1 → 테스트 DB를 읽고, 저장도 따로 함
+  const TEST = new URLSearchParams(location.search).get('test') === '1';
+  const T = (u) => TEST ? u + (u.includes('?') ? '&' : '?') + 'test=1' : u;
+  const CACHE_KEY = TEST ? 'yeollin-cal-cache-test' : 'yeollin-cal-cache-v2';
   const TOKEN_KEY = 'yeollin-cal-token-v2';
   const KST = 9 * 60 * 60 * 1000;
 
@@ -241,7 +244,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   // ── 서버 통신 ──
   async function callApi(url, opts) {
     let r;
-    try { r = await fetch(url, { cache: 'no-store', ...opts }); }
+    try { r = await fetch(T(url), { cache: 'no-store', ...opts }); }
     catch { throw { kind: 'network', message: navigator.onLine === false ? '인터넷 연결이 끊겨 있습니다.' : '서버에 연결하지 못했습니다.' }; }
     let body = null;
     try { body = await r.json(); } catch {}

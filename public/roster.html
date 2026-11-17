@@ -138,7 +138,9 @@ td.d{min-width:96px;max-width:130px}
     get(k) { try { const v = localStorage.getItem(k); if (v != null) return v; } catch {} return mem[k] ?? null; },
     set(k, v) { mem[k] = v; try { localStorage.setItem(k, v); } catch {} },
   };
-  const cacheKey = (m) => 'yeollin-roster-v1:' + m;
+  const TEST = new URLSearchParams(location.search).get('test') === '1';   // 테스트: 테스트 DB를 읽고 저장도 따로
+  const T = (u) => TEST ? u + (u.includes('?') ? '&' : '?') + 'test=1' : u;
+  const cacheKey = (m) => (TEST ? 'yeollin-roster-test:' : 'yeollin-roster-v1:') + m;
 
   const kstNow = () => new Date(Date.now() + KST);
   const curMonth = () => kstNow().toISOString().slice(0, 7);
@@ -330,7 +332,7 @@ td.d{min-width:96px;max-width:130px}
     apply(checked); render();
     try {
       let r;
-      try { r = await fetch('/api/structure', { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: s.name, date: d, checked }) }); }
+      try { r = await fetch(T('/api/structure'), { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: s.name, date: d, checked }) }); }
       catch { throw new Error(navigator.onLine === false ? '인터넷 연결이 끊겨 있습니다.' : '서버에 연결하지 못했습니다.'); }
       let body = null; try { body = await r.json(); } catch {}
       if (!r.ok) throw new Error((body && body.error) || `저장 실패 (${r.status})`);
@@ -380,7 +382,7 @@ td.d{min-width:96px;max-width:130px}
     inflight = (async () => {
       try {
         let r;
-        try { r = await fetch('/api/roster?month=' + encodeURIComponent(want), { cache: 'no-store' }); }
+        try { r = await fetch(T('/api/roster?month=' + encodeURIComponent(want)), { cache: 'no-store' }); }
         catch { throw new Error(navigator.onLine === false ? '인터넷 연결이 끊겨 있습니다.' : '서버에 연결하지 못했습니다.'); }
         let body = null; try { body = await r.json(); } catch {}
         if (!r.ok || !body) throw new Error((body && body.error) || `서버 오류 (${r.status})`);

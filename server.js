@@ -270,8 +270,8 @@ const VCOPY_ALL = process.env.GEAR_VCOPY === 'all';
 const CSEARCH_ALL = process.env.GEAR_CSEARCH === 'all';
 // 「크게 보기」 버튼(노션 임베드 안에서 전체 화면으로 열기): 모든 일정에서 켜짐. 끄려면 GEAR_BIG=off
 const BIG_ALL = process.env.GEAR_BIG !== 'off';
-// 「📄 복사 · 📥 붙여넣기」: GEAR_CLIP=all 이면 모든 일정, 아니면 주소에 &clip=1 이 있는 화면(테스트페이지)만
-const CLIP_ALL = process.env.GEAR_CLIP === 'all';
+// 「📄 복사 · 📥 붙여넣기」: 모든 일정에서 켜짐. 끄려면 GEAR_CLIP=off
+const CLIP_ALL = process.env.GEAR_CLIP !== 'off';
 const stock = require('./stock')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY], AppError });
 const overlaps = (a, b) => a.startDate <= b.endDate && b.startDate <= a.endDate;
 const evLabel = (e) => { const [, m, d] = e.startDate.split('-').map(Number); return `${m}/${d} ${e.title}`; };

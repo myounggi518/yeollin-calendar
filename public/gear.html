@@ -100,6 +100,9 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
 .copy small.ok{color:#1f7a3d;font-weight:700}
 .copy small.err{color:#b42318;font-weight:700}
 #copyBtn[hidden]{display:none}
+/* 크게 보기: 노션 임베드 안에서만 보임, 누르면 전체 화면으로 열림 */
+.bigbtn{display:inline-block;background:#15243b;color:#fff;border:1px solid #15243b;border-radius:8px;padding:7px 11px;font-weight:700;font-size:13px;text-decoration:none;white-space:nowrap}
+.bigbtn[hidden]{display:none}
 /* 작성 완료 알림 */
 .notify{margin:14px 0 4px;background:#fff;border:1.5px solid #1f7a3d;border-radius:10px;padding:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .notify b{flex:1 0 100%;font-size:14px;color:#1f7a3d}
@@ -125,6 +128,7 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   <select id="event" aria-label="일정 선택"><option>불러오는 중…</option></select>
   <b id="evname" hidden></b>
   <span class="sum" id="sum"></span>
+  <a id="bigBtn" class="noprint bigbtn" hidden target="_blank" rel="noopener">⤢ 크게 보기</a>
   <button id="copyBtn" class="noprint" hidden style="color:#2156a5;border-color:#9db8e3">📋 불러오기</button>
   <button id="reload" class="noprint" title="다른 사람이 바꾼 내용 다시 불러오기">새로고침</button>
   <button id="print" class="noprint">인쇄</button>
@@ -313,6 +317,9 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
       stockOn = qp.get('stock') === '1' || !!(VIDEO ? d.vstockAll : d.stockAll);
       copyOn = qp.get('copy') === '1' || !!(VIDEO ? d.vcopyAll : d.copyAll);
       csearchOn = qp.get('csearch') === '1' || !!d.csearchAll;
+      // 노션 임베드(iframe) 안에서만 「크게 보기」 — 같은 주소를 새 창(전체 화면)으로 엶
+      let inFrame = true; try { inFrame = window.self !== window.top; } catch (e) { inFrame = true; }
+      if ((qp.get('big') === '1' || d.bigAll) && inFrame) { const b = $('bigBtn'); b.href = location.href; b.hidden = false; }
       $('copyQ').hidden = !csearchOn;
       const sel = $('event'); sel.textContent = '';
       sel.append(new Option('— 일정을 고르세요 —', ''));

@@ -141,43 +141,65 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
   }
 
   // r = { pid?, gear?, block?, text?, qty, checked, note }  → 저장 후 줄 반환(수량 0이면 삭제 → null)
+  // 한 줄 저장 (cat·existing을 받아서 씀 — saveRow·saveMany 공용)
+  async function saveOne(eventId, r, eventTitle, cat, existing) {
+    const g = r.gear ? cat.find((x) => x.id === normId(r.gear)) : null;
+    if (r.gear && !g) throw new AppError('BAD_REQUEST');
+    let target = r.pid ? existing.find((x) => x.pid === normId(r.pid)) : null;
+    if (r.pid && !target) target = null;                       // 이미 지워진 줄이면 새로 만듦
+    const screen = r.screen === '영상' ? '영상' : '음향';
+    if (target && target.screen !== screen) target = null;      // 다른 화면(음향/영상)의 줄은 건드리지 않음
+    if (!target && g) target = existing.find((x) => x.gear === g.id && x.screen === screen) || null; // 같은 화면·같은 장비는 한 줄로
+    const qty = Math.max(0, Math.min(9999, Math.round(Number(r.qty) || 0)));
+    const note = String(r.note || '').slice(0, 300);
+    const box = Math.max(0, Math.min(9999, Math.round(Number(r.box) || 0)));
+    const text = String(r.text || '').trim().slice(0, 100);
+    const block = /^[a-z0-9]{1,12}$/.test(r.block || '') ? r.block : 'etc';
+    if (!g && !text) { if (target) await notionRequest('PATCH', `/v1/pages/${target.pid}`, { in_trash: true }, key); return null; }
+    if (qty === 0 && box === 0 && !note && !r.checked) {
+      if (target) await notionRequest('PATCH', `/v1/pages/${target.pid}`, { in_trash: true }, key);
+      return null;
+    }
+    const properties = {
+      '직접입력': { title: [{ text: { content: g ? g.full : `[${block}] ${text}` } }] },
+      '장비': { relation: g ? [{ id: g.id }] : [] },
+      '수량': { number: qty },
+      'BOX': { number: box },
+      '챙김': { checkbox: !!r.checked },
+      'note': { rich_text: note ? [{ text: { content: note } }] : [] },
+      '구분': { select: { name: screen } },
+    };
+    let page;
+    if (target) page = await notionRequest('PATCH', `/v1/pages/${target.pid}`, { properties }, key);
+    else page = await notionRequest('POST', '/v1/pages', {
+      parent: { type: 'data_source_id', data_source_id: GEAR_DS },
+      properties: { ...properties, '일정ID': { rich_text: [{ text: { content: eventId } }] }, '일정명': { rich_text: [{ text: { content: String(eventTitle || '').slice(0, 200) } }] } },
+    }, key);
+    const row = rowOf(page);
+    if (!target) existing.push(row);
+    return row;
+  }
+
   async function saveRow(eventId, r, eventTitle) {
+    return withLock(eventId, async () => saveOne(eventId, r, eventTitle, await getCatalog(), await listRows(eventId)));
+  }
+
+  // 여러 줄 한 번에 저장 (붙여넣기·불러오기): 목록 조회 1번, 노션 한도(초당 약 3건) 안에서 3줄씩 동시에
+  async function saveMany(eventId, list, eventTitle) {
     return withLock(eventId, async () => {
       const cat = await getCatalog();
-      const g = r.gear ? cat.find((x) => x.id === normId(r.gear)) : null;
-      if (r.gear && !g) throw new AppError('BAD_REQUEST');
       const existing = await listRows(eventId);
-      let target = r.pid ? existing.find((x) => x.pid === normId(r.pid)) : null;
-      if (r.pid && !target) target = null;                       // 이미 지워진 줄이면 새로 만듦
-      const screen = r.screen === '영상' ? '영상' : '음향';
-      if (target && target.screen !== screen) target = null;      // 다른 화면(음향/영상)의 줄은 건드리지 않음
-      if (!target && g) target = existing.find((x) => x.gear === g.id && x.screen === screen) || null; // 같은 화면·같은 장비는 한 줄로
-      const qty = Math.max(0, Math.min(9999, Math.round(Number(r.qty) || 0)));
-      const note = String(r.note || '').slice(0, 300);
-      const box = Math.max(0, Math.min(9999, Math.round(Number(r.box) || 0)));
-      const text = String(r.text || '').trim().slice(0, 100);
-      const block = /^[a-z0-9]{1,12}$/.test(r.block || '') ? r.block : 'etc';
-      if (!g && !text) { if (target) await notionRequest('PATCH', `/v1/pages/${target.pid}`, { in_trash: true }, key); return null; }
-      if (qty === 0 && box === 0 && !note && !r.checked) {
-        if (target) await notionRequest('PATCH', `/v1/pages/${target.pid}`, { in_trash: true }, key);
-        return null;
-      }
-      const properties = {
-        '직접입력': { title: [{ text: { content: g ? g.full : `[${block}] ${text}` } }] },
-        '장비': { relation: g ? [{ id: g.id }] : [] },
-        '수량': { number: qty },
-        'BOX': { number: box },
-        '챙김': { checkbox: !!r.checked },
-        'note': { rich_text: note ? [{ text: { content: note } }] : [] },
-        '구분': { select: { name: screen } },
+      const out = new Array(list.length).fill(null);
+      let i = 0;
+      const worker = async () => {
+        while (i < list.length) {
+          const k = i++;
+          try { out[k] = { ok: true, row: await saveOne(eventId, list[k], eventTitle, cat, existing) }; }
+          catch (e) { out[k] = { ok: false, error: e.code || e.message }; }
+        }
       };
-      let page;
-      if (target) page = await notionRequest('PATCH', `/v1/pages/${target.pid}`, { properties }, key);
-      else page = await notionRequest('POST', '/v1/pages', {
-        parent: { type: 'data_source_id', data_source_id: GEAR_DS },
-        properties: { ...properties, '일정ID': { rich_text: [{ text: { content: eventId } }] }, '일정명': { rich_text: [{ text: { content: String(eventTitle || '').slice(0, 200) } }] } },
-      }, key);
-      return rowOf(page);
+      await Promise.all([worker(), worker(), worker()]);
+      return out;
     });
   }
 
@@ -195,5 +217,5 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
     });
   }
 
-  return { getCatalog, listRows, listRowsFor, sourceCounts, searchSources, saveRow, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
+  return { getCatalog, listRows, listRowsFor, sourceCounts, searchSources, saveRow, saveMany, resetEvent, isId: (s) => ID_RE.test(String(s || '')), normId };
 };

@@ -647,6 +647,53 @@ async function handle(req, res) {
         console.log(`반출장비 초기화: ${eventId} (${n}줄)`);
         return sendJson(res, 200, { ok: true, removed: n });
       }
+      // 여러 줄 한 번에 저장 (붙여넣기·불러오기): 재고 확인 1번 + 3줄씩 동시에 저장
+      if (req.method === 'POST' && url.pathname === '/api/gear/bulk') {
+        const cal = await getEvents(test);
+        const ev = cal.events.find((e) => gear.normId(e.id) === eventId);
+        if (!ev) return sendError(res, 'BAD_REQUEST');
+        const body = (await readJson(req, 256 * 1024)) || {};
+        const screen = body.screen === '영상' ? '영상' : '음향';
+        const list = (Array.isArray(body.rows) ? body.rows.slice(0, 300) : []).map((r) => ({ ...r, screen, pid: undefined }));
+        const title = `${ev.startDate} ${ev.title}`;
+        const stockOn = (screen === '영상' ? VSTOCK_ALL : STOCK_ALL) || body.stock === true;
+        const cut = [];
+        const run = async () => {
+          if (stockOn) {
+            let st = null;
+            try { st = await stockState(ev, cal); } catch (e) { console.error('재고 확인 실패(제한 없이 저장):', e.code || e.message); }
+            if (st) {
+              const own = (await gear.listRows(eventId)).filter((r) => r.gear && st.items[r.gear]);
+              const batchGears = new Set(list.map((r) => r.gear && gear.normId(r.gear)).filter(Boolean));
+              const base = {};   // 이 일정의 다른 줄(이번에 안 건드리는 줄)이 쓰는 수량
+              for (const r of own) if (!batchGears.has(r.gear)) { const k = st.items[r.gear].key; (base[k] ||= { q: 0, b: 0 }); base[k].q += r.qty || 0; base[k].b += r.box || 0; }
+              const added = {};
+              for (const r of list) {
+                const gid = r.gear ? gear.normId(r.gear) : '';
+                const it = gid && st.items[gid];
+                if (!it) continue;
+                const u = st.used[it.key] || { qty: 0, box: 0 };
+                const b0 = base[it.key] || { q: 0, b: 0 }, a0 = (added[it.key] ||= { q: 0, b: 0 });
+                const before = own.find((x) => x.gear === gid && x.screen === screen) || { qty: 0, box: 0 };
+                const avail = Math.max(0, it.stock - u.qty - b0.q - a0.q);
+                let qty = Math.max(0, Math.round(Number(r.qty) || 0));
+                if (qty > avail && qty > (before.qty || 0)) { const to = Math.max(avail, before.qty || 0); cut.push({ gear: gid, kind: 'qty', from: qty, to }); qty = to; }
+                r.qty = qty; a0.q += qty;
+                if (typeof it.box === 'number') {
+                  const bAvail = Math.max(0, it.box - (u.box || 0) - b0.b - a0.b);
+                  let bx = Math.max(0, Math.round(Number(r.box) || 0));
+                  if (bx > bAvail && bx > (before.box || 0)) { const to = Math.max(bAvail, before.box || 0); cut.push({ gear: gid, kind: 'box', from: bx, to }); bx = to; }
+                  r.box = bx; a0.b += bx;
+                }
+              }
+            }
+          }
+          return gear.saveMany(eventId, list, title);
+        };
+        const results = stockOn ? await withStockLock(run) : await run();
+        console.log(`반출장비 한 번에 저장: ${ev.title} (${screen}) ${list.length}줄`);
+        return sendJson(res, 200, { ok: true, results, cut });
+      }
       if (req.method === 'POST' && url.pathname === '/api/gear') {
         const cal = await getEvents(test);
         const ev = cal.events.find((e) => gear.normId(e.id) === eventId);

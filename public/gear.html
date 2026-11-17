@@ -654,13 +654,27 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
         if (!has(r) && !r.note.trim()) { rows.splice(rows.indexOf(r), 1); continue; }
         todo.push(r); added++;
       }
-      render();
-      for (let i = 0; i < todo.length; i++) {   // 한 줄씩 차례로 노션에 저장
+      render();   // 화면은 바로 채우고, 저장은 한 번에 (서버가 재고 확인 1번 + 3줄씩 동시에 저장)
+      let failed = 0;
+      if (todo.length) {
+        say(`노션에 저장하는 중… (${todo.length}종)`);
+        const resp = await api('/api/gear/bulk?event=' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ screen: SCREEN, stock: stockOn || undefined, rows: todo.map((r) => ({ gear: r.gear || undefined, block: r.block, text: r.text, qty: r.qty, box: r.box || 0, checked: false, note: r.note })) }) });
         if (eventId !== id) return;
-        say(`노션에 저장하는 중… ${i + 1} / ${todo.length}`);
-        await doSave(todo[i], todo[i]._tr);
+        (resp.results || []).forEach((x, i) => {
+          const r = todo[i];
+          if (x && x.ok && x.row) { r.pid = x.row.pid; r.screen = SCREEN; r.qty = x.row.qty; r.box = x.row.box; r.saved = r.qty; r.savedBox = r.box; }
+          else if (x && x.ok) { const k = rows.indexOf(r); if (k >= 0) rows.splice(k, 1); }
+          else { failed++; }
+        });
+        for (const c of resp.cut || []) {   // 그사이 다른 일정이 먼저 잡아 서버가 더 줄인 경우
+          const nm = byId[c.gear] ? byId[c.gear].name : '';
+          cut.push(`${nm} ${c.kind === 'box' ? '박스 ' : ''}${c.from}→${c.to}`);
+        }
+        render(); await loadStock(id); hints.forEach((f) => f());
       }
-      let t = `✅ ${srcName}에서 ${added}종 불러옴`;
+      let t = `✅ ${srcName}에서 ${added - failed}종 불러옴`;
+      if (failed) t += ` · ${failed}종 저장 실패(다시 불러오면 재시도)`;
       if (skipped) t += ` · 이미 있던 ${skipped}종은 그대로`;
       if (cut.length) t += `\n⚠️ 재고 부족으로 줄임: ${cut.join(', ')}`;
       status(t.split('\n')[0], !!cut.length);

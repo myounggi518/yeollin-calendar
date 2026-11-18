@@ -648,14 +648,17 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
         let r = rows.find((x) => same(x) && !content(x));   // 빈 고정 줄이 있으면 그 줄을 채움
         if (!r) { r = { key: ++seq, gear: s.gear || null, block: s.block, text: s.text, qty: 0, box: 0, checked: false, note: '' }; rows.push(r); }
         r.qty = s.qty || 0; r.box = s.box || 0; r.note = s.note || ''; r.checked = false;
-        const a = availFor(r);
-        if (a && r.qty > a.avail) { cut.push(`${byId[r.gear] ? byId[r.gear].name : ''} ${a.boxStock != null ? '판 ' : ''}${r.qty}→${a.avail}`); r.qty = a.avail; }
-        if (a && a.boxStock != null && r.box > a.boxAvail) { cut.push(`${byId[r.gear] ? byId[r.gear].name : ''} 박스 ${r.box}→${a.boxAvail}`); r.box = a.boxAvail; }
+        // 재고가 모자라면 수량을 줄이지 않고 그 품목은 빼고 알려 줌 (사용자가 고른 수량이 아니므로)
+        const a = availFor(r), nm = byId[r.gear] ? byId[r.gear].name : '';
+        let over = '';
+        if (a && r.qty > a.avail) over = `${nm} ${a.boxStock != null ? '판 ' : ''}${r.qty}개(남은 재고 ${a.avail})`;
+        else if (a && a.boxStock != null && r.box > a.boxAvail) over = `${nm} 박스 ${r.box}개(남은 재고 ${a.boxAvail})`;
+        if (over) { cut.push(over); rows.splice(rows.indexOf(r), 1); continue; }
         if (!has(r) && !r.note.trim()) { rows.splice(rows.indexOf(r), 1); continue; }
         todo.push(r); added++;
       }
       render();   // 화면은 바로 채우고, 저장은 한 번에 (서버가 재고 확인 1번 + 3줄씩 동시에 저장)
-      let failed = 0;
+      let failed = 0, dropped = 0;
       if (todo.length) {
         say(`노션에 저장하는 중… (${todo.length}종)`);
         const resp = await api('/api/gear/bulk?event=' + id, { method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -664,19 +667,19 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
         (resp.results || []).forEach((x, i) => {
           const r = todo[i];
           if (x && x.ok && x.row) { r.pid = x.row.pid; r.screen = SCREEN; r.qty = x.row.qty; r.box = x.row.box; r.saved = r.qty; r.savedBox = r.box; }
-          else if (x && x.ok) { const k = rows.indexOf(r); if (k >= 0) rows.splice(k, 1); }
+          else if (x && x.ok) { if (x.skipped) dropped++; const k = rows.indexOf(r); if (k >= 0) rows.splice(k, 1); }
           else { failed++; }
         });
-        for (const c of resp.cut || []) {   // 그사이 다른 일정이 먼저 잡아 서버가 더 줄인 경우
+        for (const c of resp.cut || []) {   // 그사이 다른 일정이 먼저 잡아 서버가 뺀 품목
           const nm = byId[c.gear] ? byId[c.gear].name : '';
-          cut.push(`${nm} ${c.kind === 'box' ? '박스 ' : ''}${c.from}→${c.to}`);
+          cut.push(`${nm} ${c.kind === 'box' ? '박스 ' : ''}${c.from}개(남은 재고 ${c.to})`);
         }
         render(); await loadStock(id); hints.forEach((f) => f());
       }
-      let t = `✅ ${srcName}에서 ${added - failed}종 불러옴`;
+      let t = `✅ ${srcName}에서 ${added - failed - dropped}종 불러옴`;
       if (failed) t += ` · ${failed}종 저장 실패(다시 불러오면 재시도)`;
       if (skipped) t += ` · 이미 있던 ${skipped}종은 그대로`;
-      if (cut.length) t += `\n⚠️ 재고 부족으로 줄임: ${cut.join(', ')}`;
+      if (cut.length) t += `\n⚠️ 재고가 모자라 빠진 품목: ${cut.join(', ')} — 재고현황의 숫자를 넘어서면 선택할 수 없습니다`;
       status(t.split('\n')[0], !!cut.length);
       say(t, cut.length ? 'err' : 'ok');
     } catch (e) { say('불러오기 실패: ' + e.message, 'err'); }

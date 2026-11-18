@@ -676,19 +676,21 @@ async function handle(req, res) {
                 const b0 = base[it.key] || { q: 0, b: 0 }, a0 = (added[it.key] ||= { q: 0, b: 0 });
                 const before = own.find((x) => x.gear === gid && x.screen === screen) || { qty: 0, box: 0 };
                 const avail = Math.max(0, it.stock - u.qty - b0.q - a0.q);
-                let qty = Math.max(0, Math.round(Number(r.qty) || 0));
-                if (qty > avail && qty > (before.qty || 0)) { const to = Math.max(avail, before.qty || 0); cut.push({ gear: gid, kind: 'qty', from: qty, to }); qty = to; }
+                // 재고가 모자라면 수량을 줄이지 않고 그 품목을 통째로 뺌 (사용자가 고른 수량이 아니므로)
+                const qty = Math.max(0, Math.round(Number(r.qty) || 0));
+                if (qty > avail && qty > (before.qty || 0)) { r._skip = true; cut.push({ gear: gid, kind: 'qty', from: qty, to: avail }); continue; }
+                const bAvail = typeof it.box === 'number' ? Math.max(0, it.box - (u.box || 0) - b0.b - a0.b) : Infinity;
+                const bx = Math.max(0, Math.round(Number(r.box) || 0));
+                if (bx > bAvail && bx > (before.box || 0)) { r._skip = true; cut.push({ gear: gid, kind: 'box', from: bx, to: bAvail }); continue; }
                 r.qty = qty; a0.q += qty;
-                if (typeof it.box === 'number') {
-                  const bAvail = Math.max(0, it.box - (u.box || 0) - b0.b - a0.b);
-                  let bx = Math.max(0, Math.round(Number(r.box) || 0));
-                  if (bx > bAvail && bx > (before.box || 0)) { const to = Math.max(bAvail, before.box || 0); cut.push({ gear: gid, kind: 'box', from: bx, to }); bx = to; }
-                  r.box = bx; a0.b += bx;
-                }
+                if (typeof it.box === 'number') { r.box = bx; a0.b += bx; }
               }
             }
           }
-          return gear.saveMany(eventId, list, title);
+          const keep = list.filter((r) => !r._skip);
+          const saved = await gear.saveMany(eventId, keep, title);
+          let j = 0;
+          return list.map((r) => (r._skip ? { ok: true, skipped: true } : saved[j++]));
         };
         const results = stockOn ? await withStockLock(run) : await run();
         console.log(`반출장비 한 번에 저장: ${ev.title} (${screen}) ${list.length}줄`);

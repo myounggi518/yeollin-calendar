@@ -636,7 +636,6 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   $('copyGo').addEventListener('click', async () => {
     const src = $('copySrc').value, id = eventId, btn = $('copyGo');
     if (!src || !id) { copyMsg('먼저 불러올 일정을 고르세요.', 'err'); return; }
-    if (needArm(btn, (n) => `기존 ${n}종 지우고 바꿀까요? 한 번 더`)) return;
     const srcName = $('copySrc').selectedOptions[0].textContent.replace(/ · \d+종$/, '');
     btn.disabled = true;
     try { await mergeFrom(src, srcName, copyMsg); } finally { btn.disabled = false; }
@@ -728,7 +727,6 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   $('clipPaste').addEventListener('click', async () => {
     const c = clipGet(), b = $('clipPaste');
     if (!c || !eventId || c.id === eventId) return;
-    if (needArm(b, (n) => `기존 ${n}종 지우고 붙여넣을까요? 한 번 더`)) return;
     b.disabled = true;
     try { await mergeFrom(c.id, clipLabel(c), (t, cls) => status(t.split('\n')[0] + (t.includes('\n') ? ' ' + t.split('\n')[1] : ''), cls === 'err')); }
     finally { b.disabled = false; }

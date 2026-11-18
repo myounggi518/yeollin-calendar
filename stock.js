@@ -60,7 +60,11 @@ function parseTable(rows, setOnly, prefix) {
     if (/박스|box/i.test(h)) boxCols.push(i); else qtyCols.push(i);   // 「판」·「EA」·연도만 → 수량
   });
   if (!qtyCols.length) return {};
-  const latest = (r, cols) => { let v = null; for (let i = cols.length - 1; i >= 0 && v === null; i--) v = cellNum(r[cols[i]]); return v; };
+  // 열 위치와 상관없이 머리글 연도(·월)가 큰 칸부터 → 표를 최신순(왼쪽)·오래된순 어느 쪽으로 놓아도 같음
+  const ym = (h) => { const m = /^(\d{4})년(?:\s*(\d{1,2})월)?/.exec(h); return m ? Number(m[1]) * 100 + Number(m[2] || 0) : 0; };
+  const byNew = (cols) => cols.slice().sort((a, b) => ym(head[b]) - ym(head[a]) || b - a);
+  qtyCols = byNew(qtyCols); boxCols = byNew(boxCols);
+  const latest = (r, cols) => { let v = null; for (let i = 0; i < cols.length && v === null; i++) v = cellNum(r[cols[i]]); return v; };
   for (const r of rows.slice(1)) {
     const name = norm((prefix ? prefix + ' ' : '') + String(r[nameCol] || '').replace(/\(비고[^)]*\)/g, ''));
     if (!name || name in out) continue;

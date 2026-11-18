@@ -657,6 +657,7 @@ async function handle(req, res) {
         const list = (Array.isArray(body.rows) ? body.rows.slice(0, 300) : []).map((r) => ({ ...r, screen, pid: undefined }));
         const title = `${ev.startDate} ${ev.title}`;
         const stockOn = (screen === '영상' ? VSTOCK_ALL : STOCK_ALL) || body.stock === true;
+        const replace = body.replace === true;   // 붙여넣기·불러오기: 이 화면의 기존 목록을 지우고 통째로 바꿈
         const cut = [];
         const run = async () => {
           if (stockOn) {
@@ -665,8 +666,8 @@ async function handle(req, res) {
             if (st) {
               const own = (await gear.listRows(eventId)).filter((r) => r.gear && st.items[r.gear]);
               const batchGears = new Set(list.map((r) => r.gear && gear.normId(r.gear)).filter(Boolean));
-              const base = {};   // 이 일정의 다른 줄(이번에 안 건드리는 줄)이 쓰는 수량
-              for (const r of own) if (!batchGears.has(r.gear)) { const k = st.items[r.gear].key; (base[k] ||= { q: 0, b: 0 }); base[k].q += r.qty || 0; base[k].b += r.box || 0; }
+              const base = {};   // 이 일정의 다른 줄(이번에 안 건드리는 줄)이 쓰는 수량 — 통째로 바꾸기면 이 화면의 기존 줄은 지워지므로 뺌
+              for (const r of own) if (!batchGears.has(r.gear) && !(replace && (r.screen || '음향') === screen)) { const k = st.items[r.gear].key; (base[k] ||= { q: 0, b: 0 }); base[k].q += r.qty || 0; base[k].b += r.box || 0; }
               const added = {};
               for (const r of list) {
                 const gid = r.gear ? gear.normId(r.gear) : '';
@@ -688,7 +689,7 @@ async function handle(req, res) {
             }
           }
           const keep = list.filter((r) => !r._skip);
-          const saved = await gear.saveMany(eventId, keep, title);
+          const saved = await gear.saveMany(eventId, keep, title, replace ? { screen } : null);
           let j = 0;
           return list.map((r) => (r._skip ? { ok: true, skipped: true } : saved[j++]));
         };

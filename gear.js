@@ -185,10 +185,12 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
   }
 
   // 여러 줄 한 번에 저장 (붙여넣기·불러오기): 목록 조회 1번, 노션 한도(초당 약 3건) 안에서 3줄씩 동시에
-  async function saveMany(eventId, list, eventTitle) {
+  // replace: { screen } 이면 저장 뒤 그 화면(음향/영상)의 나머지 기존 줄을 휴지통으로 → 통째로 바꾸기
+  async function saveMany(eventId, list, eventTitle, replace) {
     return withLock(eventId, async () => {
       const cat = await getCatalog();
       const existing = await listRows(eventId);
+      const before = replace ? existing.filter((x) => (x.screen || '음향') === replace.screen) : [];
       const out = new Array(list.length).fill(null);
       let i = 0;
       const worker = async () => {
@@ -199,6 +201,13 @@ module.exports = function createGear({ notionRequest, key, AppError }) {
         }
       };
       await Promise.all([worker(), worker(), worker()]);
+      if (replace) {
+        const keep = new Set(out.filter((x) => x && x.ok && x.row).map((x) => x.row.pid));
+        const gone = before.filter((x) => !keep.has(x.pid));
+        let k = 0;
+        const del = async () => { while (k < gone.length) { const r = gone[k++]; try { await notionRequest('PATCH', `/v1/pages/${r.pid}`, { in_trash: true }, key); } catch (e) { console.error('기존 줄 지우기 실패', r.pid, e.code || e.message); } } };
+        await Promise.all([del(), del(), del()]);
+      }
       return out;
     });
   }

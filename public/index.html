@@ -53,6 +53,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
 .event.multi.wk-l{border-left:2px dashed currentColor}   /* 지난주에서 이어짐 */
 .event.multi.wk-r{border-right:2px dashed currentColor}  /* 다음 주로 이어짐 */
 .event.ghost{visibility:hidden}
+.event.multi .lbl{position:absolute;top:0;left:0;z-index:2;padding:4px 5px;text-align:center;pointer-events:none}
 .event.multi.c-none{background:#eef0f3;box-shadow:none}
 #legend{display:flex;flex-wrap:wrap;gap:4px 6px;margin:0 0 8px;font-size:12px}
 #legend span{padding:2px 7px;border-radius:99px;white-space:nowrap}
@@ -67,6 +68,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   .calendar{gap:2px}
   .num{font-size:11px;margin-bottom:2px;height:17px;line-height:17px}
   .today .num{padding:0 5px}
+  .event.multi .lbl{padding:2px 3px}
   .event{padding:2px 3px;margin:2px 0;font-size:10px;line-height:1.25;border-radius:3px}
   .calendar{--pad:3px;--gap:2px}
   .event.multi.cont-l{padding-left:calc(3px + var(--pad) + 1px + var(--gap) / 2)}
@@ -202,9 +204,18 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
         if (key > e.startDate) a.classList.add(dow === 1 ? 'wk-l' : 'cont-l');
         if (key < e.endDate) a.classList.add(dow === 0 ? 'wk-r' : 'cont-r');
       }
-      // 여러 날 일정은 칸마다 같은 글자 → 같은 높이로 이어짐
-      if (e.time && (multi || key === e.startDate)) { const t = document.createElement('span'); t.className = 't'; t.textContent = e.time; a.append(t); }
-      a.append(document.createTextNode(e.title));
+      // 여러 날 일정: 이름은 주마다 막대 가운데에 한 번만 (첫 조각에 붙인 이름표를 막대 전체 너비로 펼침)
+      let holder = a;
+      if (multi) {
+        const dow = new Date(key + 'T00:00:00Z').getUTCDay();
+        a.append('\u00a0');
+        if (key === e.startDate || dow === 1) { holder = document.createElement('span'); holder.className = 'lbl'; a.append(holder); a.classList.add('lead'); }
+        else holder = null;
+      }
+      if (holder) {
+        if (e.time && (multi || key === e.startDate)) { const t = document.createElement('span'); t.className = 't'; t.textContent = e.time; holder.append(t); }
+        holder.append(document.createTextNode(e.title));
+      }
       a.title = (e.category ? `[${e.category.name}] ` : '') + e.title + (multi ? ` (${e.startDate} ~ ${e.endDate})` : '');
       if (/^https:\/\//.test(e.url || '')) { a.href = e.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
       return a;
@@ -237,7 +248,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
       at.forEach((e, n) => { if (e) last = n; });
       for (let n = 0; n <= last; n++) {
         let el;
-        if (at[n]) el = makeEvent(at[n], key);
+        if (at[n]) { el = makeEvent(at[n], key); el.dataset.run = week + ':' + n + ':' + at[n].startDate; }
         else { el = document.createElement('div'); el.className = 'event ghost'; el.setAttribute('aria-hidden', 'true'); el.textContent = ' '; }
         el.dataset.lane = week + ':' + n;
         box.append(el);
@@ -254,8 +265,20 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   function alignLanes() {
     const els = [...document.querySelectorAll('#calendar [data-lane]')];
     els.forEach((el) => { el.style.minHeight = ''; });
+    // 이름표를 그 주 막대의 처음~끝 너비로 펼쳐 가운데 정렬
+    const runs = new Map();
+    els.forEach((el) => { if (el.dataset.run) (runs.get(el.dataset.run) || runs.set(el.dataset.run, []).get(el.dataset.run)).push(el); });
+    for (const segs of runs.values()) {
+      const lead = segs.find((x) => x.classList.contains('lead')), lbl = lead && lead.querySelector('.lbl');
+      if (!lbl) continue;
+      lbl.style.width = (segs[segs.length - 1].getBoundingClientRect().right - lead.getBoundingClientRect().left) + 'px';
+    }
     const max = new Map();
-    els.forEach((el) => { const h = el.getBoundingClientRect().height; if (h > (max.get(el.dataset.lane) || 0)) max.set(el.dataset.lane, h); });
+    els.forEach((el) => {
+      const lbl = el.querySelector('.lbl');
+      const h = Math.max(el.getBoundingClientRect().height, lbl ? lbl.getBoundingClientRect().height : 0);
+      if (h > (max.get(el.dataset.lane) || 0)) max.set(el.dataset.lane, h);
+    });
     els.forEach((el) => { el.style.minHeight = max.get(el.dataset.lane) + 'px'; });
   }
   let resizeTimer = null;

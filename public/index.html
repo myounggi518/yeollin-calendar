@@ -29,9 +29,9 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
 .calendar{--pad:6px;--gap:3px}
 .day{min-width:0;min-height:104px;background:#fff;border:1px solid #e1e6ee;border-radius:9px;padding:var(--pad);overflow:visible}
 .day.other{opacity:.42}
-.num{font-size:13px;font-weight:700;margin-bottom:5px}
+.num{font-size:13px;font-weight:700;margin-bottom:5px;height:22px;line-height:22px}  /* 모든 칸 같은 높이 → 막대가 같은 선에서 시작 */
 .day.sat .num{color:#316abc}.day.sun .num{color:#d64949}
-.today .num{display:inline-block;background:#225bc8;color:#fff!important;border-radius:99px;padding:2px 6px}
+.today .num{display:block;width:fit-content;background:#225bc8;color:#fff!important;border-radius:99px;padding:0 7px}
 .event{display:block;padding:4px 5px;margin:3px 0;background:#e8f0fe;color:#1f4f9c;text-decoration:none;font-size:12px;line-height:1.3;white-space:normal;overflow-wrap:anywhere;word-break:keep-all;border-radius:5px}
 .event .t{font-weight:700;margin-right:2px}
 .event:hover{filter:brightness(.95)}
@@ -65,7 +65,8 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   body{padding:8px;padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
   .day{min-height:76px;border-radius:5px}
   .calendar{gap:2px}
-  .num{font-size:11px;margin-bottom:2px}
+  .num{font-size:11px;margin-bottom:2px;height:17px;line-height:17px}
+  .today .num{padding:0 5px}
   .event{padding:2px 3px;margin:2px 0;font-size:10px;line-height:1.25;border-radius:3px}
   .calendar{--pad:3px;--gap:2px}
   .event.multi.cont-l{padding-left:calc(3px + var(--pad) + 1px + var(--gap) / 2)}
@@ -259,6 +260,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #478c
   }
   let resizeTimer = null;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(alignLanes, 150); });
+  try { document.fonts.ready.then(alignLanes); } catch {}   // 글꼴이 늦게 뜨면 높이가 바뀌므로 다시 맞춤
 
   // 색 안내: 받은 일정에 있는 업무속성만, 많은 순서로 + '미지정' + '여러 날'
   function renderLegend() {

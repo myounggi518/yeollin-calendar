@@ -11,7 +11,10 @@ const PAGES = {
   spk: '413d2f7f513181e88823ff43b026da51', wl: '413d2f7f513181e9b474cf47fb2a1b1b', mic: '413d2f7f513181468ec5c067e3fe6907',
   vled: '414d2f7f5131816fb522ef768accfa8e', vcon: '414d2f7f513181428a94ebfa4eada6b7', vproc: '414d2f7f513181b98650e3b754a22d38',
   vcab: '414d2f7f513181719823dd43522bc47a', vetc: '414d2f7f51318110953cd857f73b778c',
+  cab: '413d2f7f5131819bb505dd3ff7e8032e',
 };
+// 표가 토글 제목 안에 들어 있는 페이지 (토글 안 표까지 읽음. 토글 안 굵은 소제목이 있으면 그걸 표 제목으로)
+const NESTED = new Set(['cab']);
 // 반출목록 분류 → { page: 재고현황 페이지, head: 표 바로 위 제목이 이 글자로 시작하는 표만, joinHead: 「제목 + 이름」으로 찾기 }
 const CAT = {
   '메인': { page: 'spk' }, '모니터': { page: 'spk' }, '무선': { page: 'wl', setOnly: true }, '인이어': { page: 'wl', setOnly: true }, '마이크': { page: 'mic' }, 'DI': { page: 'mic' },
@@ -24,6 +27,22 @@ const CAT = {
   'HDMI': { page: 'vcab', head: 'HDMI' }, 'SDI': { page: 'vcab', head: 'SDI' },
   '영상ETC': { page: 'vetc', head: 'ETC' }, '노트북': { page: 'vetc', head: '노트북' },
   'MONITOR': { page: 'vetc', head: 'MONITOR' }, 'TV': { page: 'vetc', head: 'TV' },
+  'XLR': { page: 'cab', sum: true },
+};
+// 합산형: 반출목록 이름 → [표 제목에 들어간 글자, 표 줄 이름]... 을 모두 더한 값 (하나라도 숫자가 없으면 제한 없음)
+// XLR 표에서는 Canare 제외 (명기님 요청 2026-11-24)
+const SUM = {
+  XLR: {
+    '3m': [['XLR (Mic Line)', 'Belden 3m']], '10m': [['XLR (Mic Line)', 'Belden 10m']], '20m': [['XLR (Mic Line)', 'Belden 20m']],
+    '3.5-XLR': [['XLR (Mic Line)', '3.5 ↔ XLR']],
+    '2ch': [['라인', '2ch 30m'], ['라인', '2ch 20m'], ['라인', '2ch 10m'], ['라인', '2ch 5m']],
+    '4ch': [['라인', '4ch 5m'], ['라인', '4ch 3m'], ['라인', 'Canare 4ch 5m']],
+    '55(mono)': [['라인', '55 cable']], '55(stereo)': [['라인', '55 cable (ST)']],
+    'aes/ebu 3m': [['라인', 'AES/EBU 3m']], 'aes/ebu 10m': [['라인', 'AES/EBU 10m']],
+    '16patch': [['멀티 패치', '16patch (5m)']], '20patch': [['멀티 패치', '20patch (8m)']],
+    'UTP 5m': [['UTP', '5m']], 'UTP 10m': [['UTP', '10m']], 'UTP 15m': [['UTP', '15m']], 'UTP 20m': [['UTP', '20m']],
+    'UTP 30m': [['UTP', '30m']], 'UTP 50m': [['UTP', '50m']],
+  },
 };
 // 반출목록 이름 → 재고현황 표 이름 (이름이 다른 것만)
 const ALIAS = {
@@ -93,11 +112,21 @@ module.exports = function createStock({ notionRequest, keys, AppError }) {
   async function readPage(pk, key) {
     const blocks = await children(PAGES[pk], key);
     const tables = []; let head = '';
+    const tableRows = async (b) => (await children(b.id, key)).filter((x) => x.type === 'table_row').map((x) => x.table_row.cells.map(plain));
     for (const b of blocks) {
-      if (/^heading_[123]$/.test(b.type)) { head = plain(b[b.type].rich_text); continue; }
+      if (/^heading_[123]$/.test(b.type)) {
+        head = plain(b[b.type].rich_text);
+        if (NESTED.has(pk) && b.has_children) {   // 토글 제목 안의 표
+          let sub = head;
+          for (const c of await children(b.id, key)) {
+            if (c.type === 'paragraph') { const t = plain(c.paragraph.rich_text).trim(); if (t) sub = t; continue; }
+            if (c.type === 'table') tables.push({ head: sub, rows: await tableRows(c) });
+          }
+        }
+        continue;
+      }
       if (b.type !== 'table') continue;
-      const rows = (await children(b.id, key)).filter((x) => x.type === 'table_row').map((x) => x.table_row.cells.map(plain));
-      tables.push({ head, rows });
+      tables.push({ head, rows: await tableRows(b) });
     }
     return tables;
   }
@@ -144,6 +173,23 @@ module.exports = function createStock({ notionRequest, keys, AppError }) {
     for (const g of catalog) {
       const spec = CAT[g.cat];
       if (!spec) continue;
+      if (spec.sum) {
+        const parts = (SUM[g.cat] || {})[g.name];
+        if (!parts) continue;
+        let total = 0, ok = true;
+        for (const [h, row] of parts) {
+          let v = null;
+          for (const tb of t[spec.page] || []) {
+            if (!normHead(tb.head).includes(normHead(h))) continue;
+            const m = parseTable(tb.rows, false, '');
+            if (norm(row) in m) { v = m[norm(row)].qty; break; }
+          }
+          if (v === null) { ok = false; break; }
+          total += v;
+        }
+        if (ok) out[g.id] = { key: `${spec.page}:${norm(g.name)}`, stock: total };
+        continue;
+      }
       const m = catMap(t, g.cat);
       const nm = norm(ALIAS[g.name] || g.name);
       if (!(nm in m)) continue;

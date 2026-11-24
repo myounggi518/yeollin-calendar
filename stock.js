@@ -35,8 +35,8 @@ const SUM = {
   XLR: {
     '3m': [['XLR (Mic Line)', 'Belden 3m']], '5m': [['XLR (Mic Line)', 'Canare 5m']], '10m': [['XLR (Mic Line)', 'Belden 10m']], '20m': [['XLR (Mic Line)', 'Belden 20m']],
     '3.5-XLR': [['XLR (Mic Line)', '3.5 ↔ XLR']],
-    '2ch': [['라인', '2ch 30m'], ['라인', '2ch 20m'], ['라인', '2ch 10m'], ['라인', '2ch 5m']],
-    '4ch': [['라인', '4ch 5m'], ['라인', '4ch 3m'], ['라인', 'Canare 4ch 5m']],
+    // 2ch는 세지 않음 (명기님 요청)
+    '4ch': [['라인', '4ch 5m'], ['라인', '4ch 3m']],
     '55(mono)': [['라인', '55 cable']], '55(stereo)': [['라인', '55 cable (ST)']],
     'aes/ebu 3m': [['라인', 'AES/EBU 3m']], 'aes/ebu 10m': [['라인', 'AES/EBU 10m']],
     '16patch': [['멀티 패치', '16patch (5m)']], '20patch': [['멀티 패치', '20patch (8m)']],

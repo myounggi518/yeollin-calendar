@@ -40,8 +40,7 @@ const SUM = {
     '55(mono)': [['라인', '55 cable']], '55(stereo)': [['라인', '55 cable (ST)']],
     'aes/ebu 3m': [['라인', 'AES/EBU 3m']], 'aes/ebu 10m': [['라인', 'AES/EBU 10m']],
     '16patch': [['멀티 패치', '16patch (5m)']], '20patch': [['멀티 패치', '20patch (8m)']],
-    'UTP 5m': [['UTP', '5m']], 'UTP 10m': [['UTP', '10m']], 'UTP 15m': [['UTP', '15m']], 'UTP 20m': [['UTP', '20m']],
-    'UTP 30m': [['UTP', '30m']], 'UTP 50m': [['UTP', '50m']],
+    // UTP·8ch·3.5-Ctype는 세지 않음 (명기님 요청)
   },
 };
 // 반출목록 이름 → 재고현황 표 이름 (이름이 다른 것만)

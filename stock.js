@@ -30,10 +30,10 @@ const CAT = {
   'XLR': { page: 'cab', sum: true },
 };
 // 합산형: 반출목록 이름 → [표 제목에 들어간 글자, 표 줄 이름]... 을 모두 더한 값 (하나라도 숫자가 없으면 제한 없음)
-// XLR 표에서는 Canare 제외 (명기님 요청 2026-11-24)
+// XLR 표: 3m·10m·20m은 Belden만, 5m은 Canare 5m (명기님 요청 2026-11-24)
 const SUM = {
   XLR: {
-    '3m': [['XLR (Mic Line)', 'Belden 3m']], '10m': [['XLR (Mic Line)', 'Belden 10m']], '20m': [['XLR (Mic Line)', 'Belden 20m']],
+    '3m': [['XLR (Mic Line)', 'Belden 3m']], '5m': [['XLR (Mic Line)', 'Canare 5m']], '10m': [['XLR (Mic Line)', 'Belden 10m']], '20m': [['XLR (Mic Line)', 'Belden 20m']],
     '3.5-XLR': [['XLR (Mic Line)', '3.5 ↔ XLR']],
     '2ch': [['라인', '2ch 30m'], ['라인', '2ch 20m'], ['라인', '2ch 10m'], ['라인', '2ch 5m']],
     '4ch': [['라인', '4ch 5m'], ['라인', '4ch 3m'], ['라인', 'Canare 4ch 5m']],

@@ -27,7 +27,7 @@ const CAT = {
   'HDMI': { page: 'vcab', head: 'HDMI' }, 'SDI': { page: 'vcab', head: 'SDI' },
   '영상ETC': { page: 'vetc', head: 'ETC' }, '노트북': { page: 'vetc', head: '노트북' },
   'MONITOR': { page: 'vetc', head: 'MONITOR' }, 'TV': { page: 'vetc', head: 'TV' },
-  'XLR': { page: 'cab', sum: true }, '멀티': { page: 'cab', sum: true }, '스피커선': { page: 'cab', sum: true },
+  'XLR': { page: 'cab', sum: true }, '멀티': { page: 'cab', sum: true },
 };
 // 합산형: 반출목록 이름 → [표 제목에 들어간 글자, 표 줄 이름]... 을 모두 더한 값 (하나라도 숫자가 없으면 제한 없음)
 // XLR 표: 3m·10m·20m은 Belden만, 5m은 Canare 5m (명기님 요청 2026-11-24)
@@ -53,13 +53,6 @@ const SUM = {
     '12채널 박스': [['멀티 패치', '12CH-INOUT (BOX)']], '16채널 박스': [['멀티 패치', '16CH-INOUT (BOX)']],
     '24채널 박스': [['멀티 패치', '24CH-IN (BOX)'], ['멀티 패치', '24CH-INOUT (BOX)']],
     '12채널 꼬리': [['멀티 패치', '12CH-TAIL']], '16채널 꼬리': [['멀티 패치', '16CH-TAIL']], '24채널 꼬리': [['멀티 패치', '24CH-TAIL']],
-  },
-  // NL8 47m·NL8(4ch박스)·NL4 1.5m·NL4(Y)는 세지 않음
-  스피커선: {
-    'NL8 1m': [['스피커선', 'NL8 1m (80cm)']], 'NL8 15m': [['스피커선', 'NL8 15m']],
-    'NL8 20m': [['스피커선', 'NL8 20m']], 'NL8 30m': [['스피커선', 'NL8 30m']],
-    'NL4 5m': [['스피커선', 'NL4 5m 이하']], 'NL4 10m': [['스피커선', 'NL4 9~10m']],
-    'NL4 15m': [['스피커선', 'NL4 15~19m']], 'NL4 20m': [['스피커선', 'NL4 20~27m']],
   },
 };
 // 반출목록 이름 → 재고현황 표 이름 (이름이 다른 것만)

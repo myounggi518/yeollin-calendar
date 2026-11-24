@@ -27,7 +27,7 @@ const CAT = {
   'HDMI': { page: 'vcab', head: 'HDMI' }, 'SDI': { page: 'vcab', head: 'SDI' },
   '영상ETC': { page: 'vetc', head: 'ETC' }, '노트북': { page: 'vetc', head: '노트북' },
   'MONITOR': { page: 'vetc', head: 'MONITOR' }, 'TV': { page: 'vetc', head: 'TV' },
-  'XLR': { page: 'cab', sum: true },
+  'XLR': { page: 'cab', sum: true }, '멀티': { page: 'cab', sum: true },
 };
 // 합산형: 반출목록 이름 → [표 제목에 들어간 글자, 표 줄 이름]... 을 모두 더한 값 (하나라도 숫자가 없으면 제한 없음)
 // XLR 표: 3m·10m·20m은 Belden만, 5m은 Canare 5m (명기님 요청 2026-11-24)
@@ -41,6 +41,18 @@ const SUM = {
     'aes/ebu 3m': [['라인', 'AES/EBU 3m']], 'aes/ebu 10m': [['라인', 'AES/EBU 10m']],
     '16patch': [['멀티 패치', '16patch (5m)']], '20patch': [['멀티 패치', '20patch (8m)']],
     // UTP·8ch·3.5-Ctype는 세지 않음 (명기님 요청)
+  },
+  // 숫자만 적힌 항목은 재고표와 상관없는 고정값 (명기님 지정)
+  멀티: {
+    'Digi-4ch-30m': [['멀티케이블', '디지털 4p 30m']],
+    'Digi-4ch-50m': [['멀티케이블', '디지털 4p 50m'], ['멀티케이블', '디지털 4p 50m (벨덴)']],
+    'Anal-4ch-30m': [6],
+    'Anal-4ch-50m': [['멀티케이블', '아날로그 4p 50m']],
+    '12ch': [['멀티케이블', '12멀티 30m'], ['멀티케이블', '12멀티 35m']],
+    '16ch-30m': [['멀티케이블', '16멀티 30m']], '16ch-50m': [['멀티케이블', '16멀티 50m']], '24ch': [['멀티케이블', '24멀티 30m']],
+    '12채널 박스': [['멀티 패치', '12CH-INOUT (BOX)']], '16채널 박스': [['멀티 패치', '16CH-INOUT (BOX)']],
+    '24채널 박스': [['멀티 패치', '24CH-IN (BOX)'], ['멀티 패치', '24CH-INOUT (BOX)']],
+    '12채널 꼬리': [['멀티 패치', '12CH-TAIL']], '16채널 꼬리': [['멀티 패치', '16CH-TAIL']], '24채널 꼬리': [['멀티 패치', '24CH-TAIL']],
   },
 };
 // 반출목록 이름 → 재고현황 표 이름 (이름이 다른 것만)
@@ -176,7 +188,9 @@ module.exports = function createStock({ notionRequest, keys, AppError }) {
         const parts = (SUM[g.cat] || {})[g.name];
         if (!parts) continue;
         let total = 0, ok = true;
-        for (const [h, row] of parts) {
+        for (const part of parts) {
+          if (typeof part === 'number') { total += part; continue; }
+          const [h, row] = part;
           let v = null;
           for (const tb of t[spec.page] || []) {
             if (!normHead(tb.head).includes(normHead(h))) continue;

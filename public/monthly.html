@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>이번 달 기록 만들기</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#15243b;-webkit-text-size-adjust:100%}
+body{margin:0;padding:8px;background:transparent}
+.box{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+select,button{font:inherit;font-size:16px;border-radius:10px;min-height:44px}
+select{flex:1 1 120px;padding:0 10px;border:1px solid #cfd8e3;background:#fff;color:#15243b}
+button{flex:2 1 200px;border:0;background:#2f6fde;color:#fff;font-weight:700;padding:0 14px;cursor:pointer}
+button:disabled{opacity:.55}
+#msg{width:100%;font-size:14px;min-height:18px;color:#5b6b80}
+#msg.ok{color:#1f8a4c}#msg.err{color:#c62f34}
+</style>
+</head>
+<body>
+<div class="box">
+  <select id="who" aria-label="작성자"><option value="">작성자</option></select>
+  <button id="go" disabled>🗓️ 이번 달 기록 만들기</button>
+  <div id="msg"></div>
+</div>
+<script>
+const page = new URLSearchParams(location.search).get('page') || '';
+const $ = (id) => document.getElementById(id);
+const say = (t, c) => { $('msg').textContent = t; $('msg').className = c || ''; };
+const KEY = 'alertName';
+const mon = (m) => m ? `${+m.slice(5, 7)}월` : '이번 달';
+let info = {};
+function status() {
+  if (!info.access) return say('⚠️ 이 표에 노션 연결이 필요해요. 관리자에게 알려 주세요.', 'err');
+  if (!info.types || !info.types.length) return say('표에 종류가 아직 없어요. 종류를 한 줄씩 먼저 적어 주세요.', 'err');
+  if (!info.todo.length) { $('go').disabled = true; return say(`✅ ${mon(info.month)} 기록이 이미 다 있어요. 표에서 수량만 채우면 됩니다.`, 'ok'); }
+  $('go').disabled = false;
+  say(`누르면 ${mon(info.month)} 줄 ${info.todo.length}개(${info.todo.join(', ')})가 생겨요. 수량만 채우세요.`);
+}
+async function load() {
+  const r = await fetch('/api/monthly?page=' + encodeURIComponent(page));
+  const d = await r.json();
+  if (!r.ok) throw new Error(d.error || '불러오기 실패');
+  info = d;
+}
+async function init() {
+  try {
+    await load();
+    for (const n of info.authors) { const o = document.createElement('option'); o.value = o.textContent = n; $('who').appendChild(o); }
+    try { const s = localStorage.getItem(KEY); if (s && info.authors.includes(s)) $('who').value = s; } catch (e) {}
+    status();
+  } catch (e) { say(e.message, 'err'); }
+}
+$('go').addEventListener('click', async () => {
+  const name = $('who').value;
+  if (!name) { say('작성자를 먼저 골라 주세요.', 'err'); $('who').focus(); return; }
+  try { localStorage.setItem(KEY, name); } catch (e) {}
+  $('go').disabled = true; say('만드는 중…');
+  try {
+    const r = await fetch('/api/monthly?page=' + encodeURIComponent(page), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || '만들지 못했어요');
+    say(`✅ ${mon(d.month)} 줄 ${d.made.length}개를 만들었어요. 표를 새로고침하고 수량을 채워 주세요.`, 'ok');
+    info.todo = []; 
+  } catch (e) { say(e.message, 'err'); $('go').disabled = false; }
+});
+init();
+</script>
+</body>
+</html>

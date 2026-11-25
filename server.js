@@ -46,6 +46,7 @@ const CLOCK_HTML = fs.readFileSync(path.join(__dirname, 'public', 'clock.html'))
 const GEAR_HTML = fs.readFileSync(path.join(__dirname, 'public', 'gear.html'));
 const DAYS_HTML = fs.readFileSync(path.join(__dirname, 'public', 'days.html'));
 const ALERT_HTML = fs.readFileSync(path.join(__dirname, 'public', 'alert.html'));
+const MONTHLY_HTML = fs.readFileSync(path.join(__dirname, 'public', 'monthly.html'));
 
 // ── 공통 도구 ───────────────────────────────────────────────────────
 class AppError extends Error { constructor(code) { super(code); this.code = code; } }
@@ -384,6 +385,48 @@ async function notifyGear(ev, screen, name, count, test, hide) {
 const ALERT_PAGES = {
   '423d2f7f51318167b343f00ec2c9b911': '🛍️ 비닐',
 };
+// ── 「이번 달 기록 만들기」 버튼 (기타장비 7개 페이지에 embed): 그 페이지 수량 DB에 이번 달 줄을 종류마다 한 줄씩 만들어 줌 ──
+// 작성자 = 고른 사람, 작성시기 = 오늘. 직원은 수량만 채우면 됨. 이번 달 줄이 이미 있는 종류는 건너뜀
+const MONTHLY_PAGES = {
+  '423d2f7f513181c1b4bcfda96cf1bbf8': ['⛺ 텐트', '423d2f7f-5131-8161-97d7-000be614bc17'],
+  '423d2f7f51318167b343f00ec2c9b911': ['🛍️ 비닐', '423d2f7f-5131-81db-b48b-000bca744f0c'],
+  '423d2f7f51318135b560feea094d0685': ['🧱 방수포', '423d2f7f-5131-819a-bb01-000b4aa65db4'],
+  '423d2f7f513181fbb9dec65b78141158': ['🔌 케이블 프로텍터', '423d2f7f-5131-81ce-b1b4-000b3030cfd2'],
+  '423d2f7f5131815f8a1bd11525d89369': ['🚧 차단벨트', '423d2f7f-5131-8141-92d7-000bb6d05ee4'],
+  '423d2f7f5131819aad26ec8b722267c9': ['🚧 차단펜스', '423d2f7f-5131-81b5-a4a8-000b0aaadbcc'],
+  '423d2f7f51318110aa27e27043278ea2': ['🌥️ 차광망', '423d2f7f-5131-8185-9c21-000b2f681ddc'],
+};
+const kstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+let monthlyKey = null;   // 수량 DB에 연결된 키 (쓰기 키 → 읽기 키 순서로 시험)
+async function monthlyQuery(ds) {
+  const keys = monthlyKey ? [monthlyKey] : [NOTION_WRITE_KEY, NOTION_API_KEY].filter(Boolean);
+  let err;
+  for (const key of keys) {
+    try {
+      const rows = []; let cursor;
+      do {
+        const d = await notionRequest('POST', `/v1/data_sources/${ds}/query`, cursor ? { start_cursor: cursor, page_size: 100 } : { page_size: 100 }, key);
+        rows.push(...d.results); cursor = d.has_more ? d.next_cursor : null;
+      } while (cursor);
+      monthlyKey = key; return { rows, key };
+    } catch (e) { err = e; }
+  }
+  throw err || new AppError('STRUCT_DISABLED');
+}
+function monthlyState(rows) {
+  const month = kstToday().slice(0, 7);
+  const types = [], done = new Set();
+  for (const r of rows) {
+    const p = r.properties || {};
+    const t = ((p['종류'] && p['종류'].title) || []).map((x) => x.plain_text).join('').trim();
+    if (!t) continue;
+    if (!types.includes(t)) types.push(t);
+    const d = p['작성시기'] && p['작성시기'].date && p['작성시기'].date.start;
+    if (d && d.slice(0, 7) === month) done.add(t);
+  }
+  return { month, types, done: types.filter((t) => done.has(t)), todo: types.filter((t) => !done.has(t)) };
+}
+const monthlyBusy = new Set();
 const lastAlert = new Map();
 async function stockAlert(pageId, name) {
   const label = ALERT_PAGES[pageId];
@@ -638,6 +681,52 @@ async function handle(req, res) {
         await stockAlert(page, name);
         console.log(`재고 부족 알림: ${ALERT_PAGES[page]} by ${name}`);
         return sendJson(res, 200, { ok: true });
+      }
+      return sendError(res, 'BAD_REQUEST');
+    } catch (e) {
+      const code = e instanceof AppError ? e.code : 'NOTION_ERROR';
+      if (!(e instanceof AppError)) console.error('Unexpected:', e);
+      return sendError(res, code);
+    }
+  }
+
+  // ── 이번 달 기록 만들기 ──
+  if (req.method === 'GET' && url.pathname === '/monthly') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(MONTHLY_HTML);
+  }
+  if (url.pathname === '/api/monthly') {
+    if (limited(`monthly:${ip}`, 20, 60 * 1000)) return sendError(res, 'TOO_MANY');
+    try {
+      const page = String(url.searchParams.get('page') || '').replace(/-/g, '').toLowerCase();
+      const conf = MONTHLY_PAGES[page];
+      if (!conf) return sendError(res, 'BAD_REQUEST');
+      const [label, ds] = conf;
+      if (req.method === 'GET') {
+        let st = null, access = true;
+        try { st = monthlyState((await monthlyQuery(ds)).rows); } catch (e) { access = false; }
+        return sendJson(res, 200, { label, authors: AUTHORS, access, ...(st || {}) });
+      }
+      if (req.method === 'POST') {
+        const body = (await readJson(req)) || {};
+        const name = String(body.name || '').trim().slice(0, 30);
+        const who = NOTIFY_STAFF.find((x) => x[0] === name && !x[2]);
+        if (!who) return sendError(res, 'BAD_REQUEST');
+        if (monthlyBusy.has(page)) return sendError(res, 'TOO_MANY');
+        monthlyBusy.add(page);
+        try {
+          const { rows, key } = await monthlyQuery(ds);
+          const st = monthlyState(rows);
+          const today = kstToday(); const made = [];
+          for (const t of st.todo) {
+            const props = { '종류': { title: [{ text: { content: t } }] }, '작성시기': { date: { start: today } } };
+            try { await notionRequest('POST', '/v1/pages', { parent: { type: 'data_source_id', data_source_id: ds }, properties: { ...props, '작성자': { people: [{ id: who[1] }] } } }, key); }
+            catch (e) { await notionRequest('POST', '/v1/pages', { parent: { type: 'data_source_id', data_source_id: ds }, properties: props }, key); }
+            made.push(t);
+          }
+          console.log(`이번 달 기록: ${label} ${made.length}줄 by ${name}`);
+          return sendJson(res, 200, { ok: true, made, skipped: st.done, month: st.month });
+        } finally { monthlyBusy.delete(page); }
       }
       return sendError(res, 'BAD_REQUEST');
     } catch (e) {

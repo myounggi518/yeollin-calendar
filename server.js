@@ -45,6 +45,7 @@ const ROSTER_HTML = fs.readFileSync(path.join(__dirname, 'public', 'roster.html'
 const CLOCK_HTML = fs.readFileSync(path.join(__dirname, 'public', 'clock.html'));
 const GEAR_HTML = fs.readFileSync(path.join(__dirname, 'public', 'gear.html'));
 const DAYS_HTML = fs.readFileSync(path.join(__dirname, 'public', 'days.html'));
+const ALERT_HTML = fs.readFileSync(path.join(__dirname, 'public', 'alert.html'));
 
 // ── 공통 도구 ───────────────────────────────────────────────────────
 class AppError extends Error { constructor(code) { super(code); this.code = code; } }
@@ -378,6 +379,38 @@ async function notifyGear(ev, screen, name, count, test, hide) {
     throw e;
   }
 }
+// ── 재고 부족 알림 버튼 (장비리스트 페이지에 embed): 그 페이지에 댓글 + 직원 전체 멘션 → 1분 뒤 멘션 지움 ──
+// 허용된 페이지만 (아무 페이지에나 댓글을 달 수 없게)
+const ALERT_PAGES = {
+  '423d2f7f51318167b343f00ec2c9b911': '🛍️ 비닐',
+};
+const lastAlert = new Map();
+async function stockAlert(pageId, name) {
+  const label = ALERT_PAGES[pageId];
+  if (Date.now() - (lastAlert.get(pageId) || 0) < 60 * 1000) throw new AppError('ALREADY_SENT');
+  lastAlert.set(pageId, Date.now());
+  const head = `${label} 재고 부족 · 작성자 ${name} · 확인 바랍니다`;
+  const build = (list) => {
+    const rich = [{ type: 'text', text: { content: head + '\n' } }];
+    list.forEach(([, id], i) => { rich.push({ type: 'mention', mention: { type: 'user', user: { id } } }); if (i < list.length - 1) rich.push({ type: 'text', text: { content: ' ' } }); });
+    return rich;
+  };
+  const post = (list) => notionRequest('POST', '/v1/comments', { parent: { page_id: pageId }, rich_text: build(list) }, NOTION_API_KEY);
+  try {
+    let c;
+    try { c = await post(NOTIFY_STAFF); }
+    catch (e) { const ok = await validStaff(NOTIFY_STAFF); if (!ok.length || ok.length === NOTIFY_STAFF.length) throw e; c = await post(ok); }
+    if (c && c.id) setTimeout(() => {
+      notionRequest('PATCH', `/v1/comments/${c.id}`, { rich_text: [{ type: 'text', text: { content: head } }] }, NOTION_API_KEY, 0, COMMENT_EDIT_VERSION)
+        .catch((e) => console.error('재고 알림 댓글 수정 실패:', e.code || e.message));
+    }, NOTIFY_HIDE_MS);
+  } catch (e) {
+    lastAlert.delete(pageId);
+    if (e instanceof AppError && e.code === 'NOTION_NOT_SHARED') throw new AppError('COMMENT_DENIED');
+    throw e;
+  }
+}
+
 
 // 업무속성(선택/상태/다중선택) → { name, color }. 비어 있으면 null
 const NOTION_COLORS = new Set(['default', 'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red']);
@@ -575,6 +608,38 @@ async function handle(req, res) {
         return sendJson(res, 200, r);
       }
       return sendError(res, 'NOT_FOUND');
+    } catch (e) {
+      const code = e instanceof AppError ? e.code : 'NOTION_ERROR';
+      if (!(e instanceof AppError)) console.error('Unexpected:', e);
+      return sendError(res, code);
+    }
+  }
+
+  // ── 재고 부족 알림 버튼 ──
+  if (req.method === 'GET' && url.pathname === '/alert') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(ALERT_HTML);
+  }
+  if (url.pathname === '/api/alert') {
+    if (limited(`alert:${ip}`, 20, 60 * 1000)) return sendError(res, 'TOO_MANY');
+    if (!NOTION_API_KEY) return sendError(res, 'STRUCT_DISABLED');
+    try {
+      const page = String(url.searchParams.get('page') || '').replace(/-/g, '').toLowerCase();
+      if (!ALERT_PAGES[page]) return sendError(res, 'BAD_REQUEST');
+      if (req.method === 'GET') {
+        let access = true;   // 알림 통합이 이 페이지에 연결돼 있는지 (안 돼 있으면 댓글을 못 닮)
+        try { await notionRequest('GET', `/v1/pages/${page}`, null, NOTION_API_KEY); } catch (e) { access = false; }
+        return sendJson(res, 200, { label: ALERT_PAGES[page], authors: AUTHORS, access });
+      }
+      if (req.method === 'POST') {
+        const body = (await readJson(req)) || {};
+        const name = String(body.name || '').trim().slice(0, 30);
+        if (!AUTHORS.includes(name)) return sendError(res, 'BAD_REQUEST');
+        await stockAlert(page, name);
+        console.log(`재고 부족 알림: ${ALERT_PAGES[page]} by ${name}`);
+        return sendJson(res, 200, { ok: true });
+      }
+      return sendError(res, 'BAD_REQUEST');
     } catch (e) {
       const code = e instanceof AppError ? e.code : 'NOTION_ERROR';
       if (!(e instanceof AppError)) console.error('Unexpected:', e);

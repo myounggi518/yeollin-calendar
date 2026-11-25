@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>이번 달 기록 만들기</title>
+<title>오늘 수량 기록 만들기</title>
 <style>
 :root{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#15243b;-webkit-text-size-adjust:100%}
 body{margin:0;padding:8px;background:transparent}
@@ -19,7 +19,7 @@ button:disabled{opacity:.55}
 <body>
 <div class="box">
   <select id="who" aria-label="작성자"><option value="">작성자</option></select>
-  <button id="go" disabled>🗓️ 이번 달 기록 만들기</button>
+  <button id="go" disabled>📝 오늘 수량 기록 만들기</button>
   <div id="msg"></div>
 </div>
 <script>
@@ -27,14 +27,14 @@ const page = new URLSearchParams(location.search).get('page') || '';
 const $ = (id) => document.getElementById(id);
 const say = (t, c) => { $('msg').textContent = t; $('msg').className = c || ''; };
 const KEY = 'alertName';
-const mon = (m) => m ? `${+m.slice(5, 7)}월` : '이번 달';
+const mon = (m) => m ? `오늘(${+m.slice(5, 7)}/${+m.slice(8, 10)})` : '오늘';
 let info = {};
 function status() {
   if (!info.access) return say('⚠️ 이 표에 노션 연결이 필요해요. 관리자에게 알려 주세요.', 'err');
   if (!info.types || !info.types.length) return say('표에 종류가 아직 없어요. 종류를 한 줄씩 먼저 적어 주세요.', 'err');
-  if (!info.todo.length) { $('go').disabled = true; return say(`✅ ${mon(info.month)} 기록이 이미 다 있어요. 표에서 수량만 채우면 됩니다.`, 'ok'); }
+  if (!info.todo.length) { $('go').disabled = true; return say(`✅ ${mon(info.month)} 기록 줄이 이미 있어요. 표에서 수량만 채우면 됩니다.`, 'ok'); }
   $('go').disabled = false;
-  say(`누르면 ${mon(info.month)} 줄 ${info.todo.length}개(${info.todo.join(', ')})가 생겨요. 수량만 채우세요.`);
+  say(`수량을 셀 때 누르세요. ${mon(info.month)} 날짜로 ${info.todo.length}줄(${info.todo.join(', ')})이 생기고, 수량만 채우면 됩니다.`);
 }
 async function load() {
   const r = await fetch('/api/monthly?page=' + encodeURIComponent(page));
@@ -59,7 +59,7 @@ $('go').addEventListener('click', async () => {
     const r = await fetch('/api/monthly?page=' + encodeURIComponent(page), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
     const d = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(d.error || '만들지 못했어요');
-    say(`✅ ${mon(d.month)} 줄 ${d.made.length}개를 만들었어요. 표를 새로고침하고 수량을 채워 주세요.`, 'ok');
+    say(`✅ ${mon(d.month)} 줄 ${d.made.length}개를 만들었어요. 아래 표에 수량을 채워 주세요.`, 'ok');
     info.todo = []; 
   } catch (e) { say(e.message, 'err'); $('go').disabled = false; }
 });

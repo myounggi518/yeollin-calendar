@@ -385,8 +385,8 @@ async function notifyGear(ev, screen, name, count, test, hide) {
 const ALERT_PAGES = {
   '423d2f7f51318167b343f00ec2c9b911': '🛍️ 비닐',
 };
-// ── 「이번 달 기록 만들기」 버튼 (기타장비 7개 페이지에 embed): 그 페이지 수량 DB에 이번 달 줄을 종류마다 한 줄씩 만들어 줌 ──
-// 작성자 = 고른 사람, 작성시기 = 오늘. 직원은 수량만 채우면 됨. 이번 달 줄이 이미 있는 종류는 건너뜀
+// ── 「오늘 수량 기록 만들기」 버튼 (기타장비 7개 페이지에 embed): 수량을 셀 때마다 그 페이지 수량 DB에 종류마다 한 줄씩 만들어 줌 ──
+// 작성자 = 고른 사람, 작성시기 = 오늘. 직원은 수량만 채우면 됨. 오늘 줄이 이미 있는 종류는 건너뜀 (중복 방지)
 const MONTHLY_PAGES = {
   '423d2f7f513181c1b4bcfda96cf1bbf8': ['⛺ 텐트', '423d2f7f-5131-8161-97d7-000be614bc17'],
   '423d2f7f51318167b343f00ec2c9b911': ['🛍️ 비닐', '423d2f7f-5131-81db-b48b-000bca744f0c'],
@@ -414,7 +414,7 @@ async function monthlyQuery(ds) {
   throw err || new AppError('STRUCT_DISABLED');
 }
 function monthlyState(rows) {
-  const month = kstToday().slice(0, 7);
+  const month = kstToday();   // 같은 날 이미 기록한 종류만 건너뜀 (수시 기록)
   const types = [], done = new Set();
   for (const r of rows) {
     const p = r.properties || {};
@@ -422,7 +422,7 @@ function monthlyState(rows) {
     if (!t) continue;
     if (!types.includes(t)) types.push(t);
     const d = p['작성시기'] && p['작성시기'].date && p['작성시기'].date.start;
-    if (d && d.slice(0, 7) === month) done.add(t);
+    if (d && d.slice(0, 10) === month) done.add(t);
   }
   return { month, types, done: types.filter((t) => done.has(t)), todo: types.filter((t) => !done.has(t)) };
 }

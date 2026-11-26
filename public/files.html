@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="format-detection" content="telephone=no">
+<title>행사 자료</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Noto Sans KR',sans-serif;color:#15243b;background:#f4f7fb;-webkit-text-size-adjust:100%}
+*{box-sizing:border-box}
+body{margin:0;padding:10px;padding-left:max(10px,env(safe-area-inset-left));padding-right:max(10px,env(safe-area-inset-right))}
+main{max-width:760px;margin:auto}
+.top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+h1{font-size:16px;margin:0;flex:1 1 180px;min-width:0;overflow-wrap:anywhere}
+a.btn{display:inline-block;padding:8px 11px;border-radius:9px;background:#225bc8;color:#fff;font-size:13px;font-weight:700;text-decoration:none;white-space:nowrap}
+a.btn.ghost{background:#fff;color:#225bc8;border:1px solid #c9d6ee}
+#status{font-size:13px;color:#5e6a7e;min-height:16px;margin:2px 0 8px}
+#status.err{color:#b42318;font-weight:700}
+section{background:#fff;border:1px solid #dbe1e9;border-radius:10px;padding:10px;margin:0 0 10px}
+h2{font-size:14px;margin:0 0 8px;display:flex;align-items:center;gap:6px}
+h2 small{font-weight:600;color:#6b7686;font-size:12px}
+h2 a{margin-left:auto;font-size:12px;font-weight:600;color:#225bc8;text-decoration:none}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+@media (min-width:560px){.grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+.grid a{display:block;aspect-ratio:1;border-radius:8px;overflow:hidden;background:#e8edf4}
+.grid img{width:100%;height:100%;object-fit:cover;display:block}
+.files{display:flex;flex-direction:column;gap:6px;margin-top:6px}
+.files a{display:flex;align-items:center;gap:8px;padding:10px;border:1px solid #e3e8ef;border-radius:9px;color:#15243b;text-decoration:none;font-size:14px;line-height:1.35;background:#fafcff}
+.files a span{overflow-wrap:anywhere;min-width:0}
+.files a b{font-size:18px}
+.empty{font-size:13px;color:#8a95a5;margin:0}
+</style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <h1 id="title">행사 자료</h1>
+    <a class="btn" id="open" href="#" target="_blank" rel="noopener" hidden>📌 행사 페이지 열기</a>
+  </div>
+  <div id="status">불러오는 중…</div>
+  <div id="list"></div>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const el = (t, cls, txt) => { const e = document.createElement(t); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+  const status = (m, err) => { $('status').textContent = m || ''; $('status').className = err ? 'err' : ''; };
+  const icon = (it) => it.type === 'pdf' || /\.pdf$/i.test(it.name) ? '📕' : it.type === 'video' ? '🎬' : it.type === 'audio' ? '🎵'
+    : /\.(pptx?|key)$/i.test(it.name) ? '📊' : /\.(xlsx?|csv)$/i.test(it.name) ? '📗' : /\.(docx?|hwpx?)$/i.test(it.name) ? '📘' : '📄';
+  const md = (s) => { if (!s) return ''; const [, m, d] = s.slice(0, 10).split('-').map(Number); return `${m}/${d}`; };
+  const open = (a, url) => { a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; };
+
+  async function load() {
+    const id = new URLSearchParams(location.search).get('event') || '';
+    if (!id) { status('일정 정보가 없습니다.', true); return; }
+    try {
+      const r = await fetch('/api/files?event=' + encodeURIComponent(id), { cache: 'no-store' });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d) throw new Error((d && d.error) || '불러오기 실패');
+      const ev = d.event;
+      $('title').textContent = `📂 ${ev.title}${ev.start ? ' · ' + md(ev.start) + (ev.end && ev.end !== ev.start ? '~' + md(ev.end) : '') : ''}`;
+      open($('open'), ev.url); $('open').hidden = false;
+      const list = $('list'); list.textContent = '';
+      let total = 0;
+      for (const g of d.groups) {
+        const sec = el('section');
+        const h = el('h2', null, g.label + ' ');
+        h.append(el('small', null, g.items.length ? `${g.items.length}개` : ''));
+        if (g.url) { const a = el('a', null, '올리기·전체 보기 ›'); open(a, g.url); h.append(a); }
+        sec.append(h);
+        const imgs = g.items.filter((x) => x.type === 'image'), rest = g.items.filter((x) => x.type !== 'image');
+        if (imgs.length) {
+          const grid = el('div', 'grid');
+          for (const it of imgs) { const a = el('a'); open(a, it.url); const im = el('img'); im.loading = 'lazy'; im.alt = it.name; im.src = it.url; a.append(im); grid.append(a); }
+          sec.append(grid);
+        }
+        if (rest.length) {
+          const box = el('div', 'files');
+          for (const it of rest) { const a = el('a'); open(a, it.url); a.append(el('b', null, icon(it)), el('span', null, it.name)); box.append(a); }
+          sec.append(box);
+        }
+        if (!g.items.length) sec.append(el('p', 'empty', g.key === 'posts' ? '행사 페이지에 올린 게시물이 없습니다.' : '아직 올린 파일이 없습니다.'));
+        total += g.items.length;
+        list.append(sec);
+      }
+      status(total ? `행사 페이지에 있는 자료 ${total}개 · 누르면 크게 열립니다` : '아직 올린 자료가 없습니다.');
+    } catch (e) { status(e.message + ' (잠시 후 새로고침해 주세요)', true); }
+  }
+  load();
+})();
+</script>
+</body>
+</html>

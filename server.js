@@ -46,6 +46,7 @@ const CLOCK_HTML = fs.readFileSync(path.join(__dirname, 'public', 'clock.html'))
 const GEAR_HTML = fs.readFileSync(path.join(__dirname, 'public', 'gear.html'));
 const DAYS_HTML = fs.readFileSync(path.join(__dirname, 'public', 'days.html'));
 const ALERT_HTML = fs.readFileSync(path.join(__dirname, 'public', 'alert.html'));
+const FILES_HTML = fs.readFileSync(path.join(__dirname, 'public', 'files.html'));
 
 // ── 공통 도구 ───────────────────────────────────────────────────────
 class AppError extends Error { constructor(code) { super(code); this.code = code; } }
@@ -283,6 +284,8 @@ if (NOTION_WRITE_KEY && process.env.DAY_SYNC !== 'off') daySync.start(Number(pro
 // 사전미팅·현장사진 하위 페이지 제목에 파일 개수 표시 (2분마다). 끄려면 FILE_COUNT=off
 const fileCount = require('./file-count')({ notionRequest, key: NOTION_WRITE_KEY, sources: [DATA_SOURCE_ID, TEST_DATA_SOURCE_ID] });
 if (NOTION_WRITE_KEY && process.env.FILE_COUNT !== 'off') fileCount.start(Number(process.env.FILE_COUNT_MS) || 2 * 60 * 1000);
+// 행사 자료 모아 보기 (날별 근무 줄에서도 상위 행사의 파일이 바로 보이게) — 읽기만 함
+const files = require('./files')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY] });
 const stock = require('./stock')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY], AppError });
 const overlaps = (a, b) => a.startDate <= b.endDate && b.startDate <= a.endDate;
 const evLabel = (e) => { const [, m, d] = e.startDate.split('-').map(Number); return `${m}/${d} ${e.title}`; };
@@ -615,6 +618,25 @@ async function handle(req, res) {
       const code = e instanceof AppError ? e.code : 'NOTION_ERROR';
       if (!(e instanceof AppError)) console.error('Unexpected:', e);
       return sendError(res, code);
+    }
+  }
+
+  // ── 행사 자료 모아 보기 (읽기 전용) ──
+  if (req.method === 'GET' && ['/files', '/files.html'].includes(url.pathname)) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    return res.end(FILES_HTML);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/files') {
+    if (limited(`files:${ip}`, 60, 60 * 1000)) return sendError(res, 'TOO_MANY');
+    if (!NOTION_API_KEY && !NOTION_WRITE_KEY) return sendError(res, 'NOT_CONFIGURED');
+    if (AUTH_ENABLED && !verifyToken(req)) return sendError(res, 'AUTH_REQUIRED');
+    const eventId = gear.normId(url.searchParams.get('event'));
+    if (!gear.isId(eventId)) return sendError(res, 'BAD_REQUEST');
+    try { return sendJson(res, 200, await files.load(eventId)); }
+    catch (e) {
+      const code = e instanceof AppError ? e.code : (e && e.code) || 'NOTION_ERROR';
+      if (!(e instanceof AppError)) console.error('자료 보기 실패:', e.code || e.message);
+      return sendError(res, ERRORS[code] ? code : 'NOTION_ERROR');
     }
   }
 

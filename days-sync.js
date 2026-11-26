@@ -5,6 +5,9 @@
  * - 사람이 직접 고친 근무 줄(마지막 수정자가 사람)은 그대로 둡니다. 아무도 손대지 않은 줄은 행사 기본값이 바뀌면 함께 바꿉니다.
  * - 기간이 줄었거나 행사가 하루 일정·휴지통이 되면, 오늘 이후의 남는 근무 줄은 휴지통으로 옮깁니다(복구 가능). 지난 날짜는 건드리지 않습니다.
  * - 처음 근무 줄을 만들 때 행사 페이지 맨 위에 「👷 날짜별 근무」 토글을 붙입니다.
+ * - 근무 줄 페이지 안에는 상위 행사로 가는 안내 + 행사의 음향·영상 반출목록 + 행사 자료(파일·사진) 화면을 넣습니다.
+ *   복사본이 아니라 행사의 같은 자료를 보여 주므로, 어디서 고쳐도 행사 한 곳에 저장됩니다.
+ *   이미 있는 근무 줄(오늘 이후, 사람이 손대지 않은 줄)에도 한 번씩 채워 넣습니다.
  * 쓰기는 근무 줄 만들기·고치기·휴지통, 행사 페이지 토글 붙이기뿐이며 행사(원본 일정)의 속성은 바꾸지 않습니다.
  */
 const TITLE = '일정명 / Tasks', DATE = '날짜', KIND = '구분', PARENT = '상위 행사';
@@ -46,6 +49,7 @@ module.exports = function createDaySync({ notionRequest, writeKey, sources, base
   let botId = null;
   const created = new Map();   // `${parent}:${date}` → 만든 시각
   let running = null;
+  const filled = new Set();   // 안내·자료 화면을 넣었거나 이미 있는 근무 줄 id
 
   async function me() {
     if (!botId) botId = (await notionRequest('GET', '/v1/users/me', null, writeKey)).id;
@@ -74,6 +78,31 @@ module.exports = function createDaySync({ notionRequest, writeKey, sources, base
   const same = (a, b) => a.title === b.title && a.time === b.time && a.place === b.place && a.cat === b.cat
     && [...a.workers].sort().join('|') === [...b.workers].sort().join('|') && [...a.cars].sort().join('|') === [...b.cars].sort().join('|');
 
+  // 근무 줄 페이지 내용: 상위 행사 안내 + 반출목록(행사와 같은 목록) + 행사 자료 화면
+  const link = (text, url) => [{ type: 'text', text: { content: text, link: { url } } }];
+  const dayBlocks = (ev) => {
+    const id = norm(ev.id);
+    return [
+      { type: 'callout', callout: { icon: { type: 'emoji', emoji: '📌' }, color: 'blue_background', rich_text: [
+        ...rt('이 날짜는 기간 행사 '),
+        { type: 'mention', mention: { page: { id: ev.id } } },
+        ...rt(' 의 하루입니다. 반출목록·자료·게시물은 행사 페이지 한 곳에 모아 두고, 아래에 똑같이 보여 줍니다.'),
+      ] } },
+      { type: 'toggle', toggle: { rich_text: link('📦 음향장비 반출목록', `${baseUrl}/gear?event=${id}`), children: [{ type: 'embed', embed: { url: `${baseUrl}/gear?event=${id}` } }] } },
+      { type: 'toggle', toggle: { rich_text: link('🎬 영상장비 반출목록', `${baseUrl}/vgear?event=${id}`), children: [{ type: 'embed', embed: { url: `${baseUrl}/vgear?event=${id}` } }] } },
+      { type: 'embed', embed: { url: `${baseUrl}/files?event=${id}` } },
+    ];
+  };
+  // 이미 있는 근무 줄에 한 번만 채우기 (사람이 손댄 줄은 건드리지 않음: 내용을 넣으면 마지막 수정자가 바뀌어 기본값 맞춤이 다시 켜지므로)
+  async function fillRow(ev, r) {
+    if (filled.has(r.id)) return false;
+    const kids = await notionRequest('GET', `/v1/blocks/${r.id}/children?page_size=20`, null, writeKey);
+    const has = (kids.results || []).some((b) => b.type === 'embed' && /\/files\?event=/.test((b.embed && b.embed.url) || ''));
+    if (!has) await notionRequest('PATCH', `/v1/blocks/${r.id}/children`, { children: dayBlocks(ev) }, writeKey);
+    filled.add(r.id);
+    return !has;
+  }
+
   async function attachToggle(ev) {
     const kids = await notionRequest('GET', `/v1/blocks/${ev.id}/children?page_size=20`, null, writeKey);
     const has = (kids.results || []).some((b) => b.type === 'toggle' && plain(b.toggle && b.toggle.rich_text).includes('날짜별 근무'));
@@ -99,7 +128,7 @@ module.exports = function createDaySync({ notionRequest, writeKey, sources, base
       created.set(k, Date.now());
       await notionRequest('POST', '/v1/pages', { parent: { data_source_id: ds }, properties: {
         ...defaults(ev), [DATE]: { date: { start: date } }, [KIND]: { select: { name: KIND_DAY } }, [PARENT]: { relation: [{ id: ev.id }] },
-      } }, writeKey);
+      }, children: dayBlocks(ev) }, writeKey);
       made++; changed = true;
     }
     if (made && rows.length === 0) await attachToggle(ev).catch((e) => log.error('토글 붙이기 실패:', ev.title, e.code || e.message));
@@ -108,6 +137,12 @@ module.exports = function createDaySync({ notionRequest, writeKey, sources, base
       if (!range.includes(r.start) || r.start < today || r.editor !== bot || same(r, ev)) continue;
       await notionRequest('PATCH', `/v1/pages/${r.id}`, { properties: defaults(ev) }, writeKey);
       changed = true;
+    }
+    // 2-1) 예전에 만든 근무 줄(오늘 이후, 손대지 않은 줄)에 안내·반출목록·자료 화면 채우기
+    for (const r of rows) {
+      if (!range.includes(r.start) || r.start < today || r.editor !== bot || filled.has(r.id)) continue;
+      try { if (await fillRow(ev, r)) log.log(`근무 줄에 행사 자료 화면 넣음: ${ev.title} ${r.start}`); }
+      catch (e) { log.error('근무 줄 자료 화면 넣기 실패:', ev.title, r.start, e.code || e.message); }
     }
     // 3) 오늘 이후 날짜만: 기간 밖이 된 줄은 휴지통으로, 같은 날 줄이 여럿이면 하나만 남김(사람이 고친 줄 우선)
     const trash = async (r) => { await notionRequest('PATCH', `/v1/pages/${r.id}`, { in_trash: true }, writeKey); changed = true; };
@@ -156,6 +191,7 @@ module.exports = function createDaySync({ notionRequest, writeKey, sources, base
       }
       if (changed && onChange) onChange();
       for (const [k, t] of created) if (Date.now() - t > CREATED_MEMO_MS) created.delete(k);
+      if (filled.size > 3000) filled.clear();
       return changed;
     })().finally(() => { running = null; });
     return running;
@@ -165,5 +201,5 @@ module.exports = function createDaySync({ notionRequest, writeKey, sources, base
     setTimeout(() => syncAll().catch(() => {}), 5 * 1000).unref();
     setInterval(() => syncAll().catch(() => {}), intervalMs).unref();
   }
-  return { syncAll, start, isRangeEvent, readPage };
+  return { syncAll, start, isRangeEvent, readPage, dayBlocks };
 };

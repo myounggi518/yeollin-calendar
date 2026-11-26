@@ -424,7 +424,11 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
   function rowEl(r, b, fixedRow) {
     const tr = el('tr'); r._tr = tr;
     const tdN = el('td', 'name');
-    if (fixedRow) tdN.textContent = byId[r.gear] ? byId[r.gear].name : r.text;
+    if (fixedRow) {
+      const nm = byId[r.gear] ? byId[r.gear].name : r.text;
+      const m = b.k === 'vled' && /^(.*\S)\s+(\d+×\d+.*)$/.exec(nm);   // LED: 사이즈(500×1000)는 다음 줄로
+      if (m) tdN.append(m[1], el('br'), m[2]); else tdN.textContent = nm;
+    }
     else {
       const inp = el('input', 'kind'); inp.value = r.gear ? (byId[r.gear] || {}).name || '' : r.text;
       inp.placeholder = '종류'; inp.setAttribute('list', 'dl');

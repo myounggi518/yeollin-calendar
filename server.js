@@ -280,6 +280,9 @@ const daySync = require('./days-sync')({
   onChange: () => cacheStore.clear(),
 });
 if (NOTION_WRITE_KEY && process.env.DAY_SYNC !== 'off') daySync.start(Number(process.env.DAY_SYNC_MS) || 60 * 1000);
+// 사전미팅·현장사진 하위 페이지 제목에 파일 개수 표시 (2분마다). 끄려면 FILE_COUNT=off
+const fileCount = require('./file-count')({ notionRequest, key: NOTION_WRITE_KEY, sources: [DATA_SOURCE_ID, TEST_DATA_SOURCE_ID] });
+if (NOTION_WRITE_KEY && process.env.FILE_COUNT !== 'off') fileCount.start(Number(process.env.FILE_COUNT_MS) || 2 * 60 * 1000);
 const stock = require('./stock')({ notionRequest, keys: [NOTION_API_KEY, NOTION_WRITE_KEY], AppError });
 const overlaps = (a, b) => a.startDate <= b.endDate && b.startDate <= a.endDate;
 const evLabel = (e) => { const [, m, d] = e.startDate.split('-').map(Number); return `${m}/${d} ${e.title}`; };

@@ -6,9 +6,11 @@
  *   사전미팅 → "사전미팅및자료파일 첨부 · 3개" (없으면 "사전미팅및자료파일 첨부")
  *   현장사진 → "행사현장사진 · 12장" (없으면 "행사현장사진")
  * - 하위 페이지가 마지막으로 고쳐진 시각이 그대로면 다시 세지 않습니다(요청 수 절약).
- * 쓰기는 이 두 하위 페이지의 제목뿐입니다. 행사(원본 일정)와 페이지 내용은 건드리지 않습니다.
+ * - 같은 숫자를 행사의 「자료」 칸에도 적습니다 (예: "📋25 📷12"). 오늘·내일·주간일정 카드의 「자료표시」 공식이
+ *   이 칸을 보여 주고, 날별 근무 줄은 상위 행사의 칸을 따라 보여 줍니다. 숫자가 바뀔 때만 적습니다.
+ * 쓰기는 이 두 하위 페이지의 제목과 행사의 「자료」 칸뿐입니다. 페이지 내용은 건드리지 않습니다.
  */
-const TITLE = '일정명 / Tasks', DATE = '날짜', KIND = '구분';
+const TITLE = '일정명 / Tasks', DATE = '날짜', KIND = '구분', BADGE = '자료';
 const KIND_DAY = '일일근무';
 const LOOKBACK_DAYS = 62;
 const FILE_TYPES = new Set(['image', 'file', 'pdf', 'video', 'audio']);
@@ -26,6 +28,7 @@ const titleFor = (k, n) => (n > 0 ? `${k.base} · ${n}${k.unit}` : k.base);
 module.exports = function createFileCount({ notionRequest, key, sources, log = console }) {
   const subsByEvent = new Map();   // 행사 id → { edited, subs: [{ id, kind }] }
   const seen = new Map();          // 하위 페이지 id → 마지막으로 센 때의 last_edited_time
+  const counts = new Map();        // 하위 페이지 id → 마지막으로 센 파일 수
   let running = null;
 
   async function children(id) {
@@ -84,9 +87,11 @@ module.exports = function createFileCount({ notionRequest, key, sources, log = c
   async function syncSub(s) {
     const p = await notionRequest('GET', `/v1/pages/${s.id}`, null, key);
     if (p.in_trash || p.archived) return false;
-    if (seen.get(s.id) === p.last_edited_time) return false;
+    if (seen.get(s.id) === p.last_edited_time && counts.has(s.id)) return false;
     const now = plain(p.properties && p.properties.title && p.properties.title.title);
-    const want = titleFor(s.kind, await countFiles(s.id));
+    const n = await countFiles(s.id);
+    counts.set(s.id, n);
+    const want = titleFor(s.kind, n);
     let changed = false;
     if (now !== want) {
       const r = await notionRequest('PATCH', `/v1/pages/${s.id}`, { properties: { title: { title: [{ type: 'text', text: { content: want } }] } } }, key);
@@ -95,6 +100,18 @@ module.exports = function createFileCount({ notionRequest, key, sources, log = c
       changed = true;
     } else seen.set(s.id, p.last_edited_time);
     return changed;
+  }
+
+  // 행사 「자료」 칸: "📋25 📷12" (없는 쪽은 빼고, 둘 다 없으면 빈칸). 칸이 없는 DB(테스트 등)는 건너뜀
+  async function syncBadge(ev, subs) {
+    const prop = ev.properties && ev.properties[BADGE];
+    if (!prop || prop.type !== 'rich_text') return;
+    const icon = { 사전미팅: '📋', 행사현장사진: '📷' };
+    const want = subs.map((s) => [s, counts.get(s.id) || 0]).filter(([, c]) => c > 0)
+      .map(([s, c]) => `${icon[s.kind.prefix]}${c}`).join(' ');
+    if (plain(prop.rich_text) === want) return;
+    await notionRequest('PATCH', `/v1/pages/${ev.id}`, { properties: { [BADGE]: { rich_text: want ? [{ type: 'text', text: { content: want } }] : [] } } }, key);
+    log.log(`자료 표시: ${plain(prop.rich_text) || '(없음)'} → ${want || '(없음)'}`);
   }
 
   async function syncAll() {
@@ -108,12 +125,16 @@ module.exports = function createFileCount({ notionRequest, key, sources, log = c
         catch (e) { log.error('파일 개수: 일정 조회 실패:', ds.slice(0, 8), e.code || e.message); continue; }
         for (const ev of events) {
           alive.add(ev.id);
-          try { for (const s of await subsOf(ev)) if (await syncSub(s)) n++; }
+          try {
+            const subs = await subsOf(ev);
+            for (const s of subs) if (await syncSub(s)) n++;
+            await syncBadge(ev, subs);
+          }
           catch (e) { log.error('파일 개수 표시 실패:', ev.id, e.code || e.message); }
         }
       }
       for (const id of subsByEvent.keys()) if (!alive.has(id)) subsByEvent.delete(id);
-      if (seen.size > 2000) seen.clear();
+      if (seen.size > 2000) { seen.clear(); counts.clear(); }
       return n;
     })().finally(() => { running = null; });
     return running;

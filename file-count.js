@@ -6,7 +6,7 @@
  *   사전미팅 → "사전미팅및자료파일 첨부 · 3개" (없으면 "사전미팅및자료파일 첨부")
  *   현장사진 → "행사현장사진 · 12장" (없으면 "행사현장사진")
  * - 하위 페이지가 마지막으로 고쳐진 시각이 그대로면 다시 세지 않습니다(요청 수 절약).
- * - 같은 숫자를 행사의 「자료」 칸에도 적습니다 (예: "📋25 📷12"). 오늘·내일·주간일정 카드의 「자료표시」 공식이
+ * - 같은 숫자를 행사의 「자료」 칸에도 적습니다 (예: "📂 자료 25 · 📷 사진 12"). 오늘·내일·주간일정 카드의 「자료표시」 공식이
  *   이 칸을 보여 주고, 날별 근무 줄은 상위 행사의 칸을 따라 보여 줍니다. 숫자가 바뀔 때만 적습니다.
  * 쓰기는 이 두 하위 페이지의 제목과 행사의 「자료」 칸뿐입니다. 페이지 내용은 건드리지 않습니다.
  */
@@ -106,9 +106,9 @@ module.exports = function createFileCount({ notionRequest, key, sources, log = c
   async function syncBadge(ev, subs) {
     const prop = ev.properties && ev.properties[BADGE];
     if (!prop || prop.type !== 'rich_text') return;
-    const icon = { 사전미팅: '📋', 행사현장사진: '📷' };
+    const icon = { 사전미팅: '📂 자료 ', 행사현장사진: '📷 사진 ' };
     const want = subs.map((s) => [s, counts.get(s.id) || 0]).filter(([, c]) => c > 0)
-      .map(([s, c]) => `${icon[s.kind.prefix]}${c}`).join(' ');
+      .map(([s, c]) => `${icon[s.kind.prefix]}${c}`).join(' · ');
     if (plain(prop.rich_text) === want) return;
     await notionRequest('PATCH', `/v1/pages/${ev.id}`, { properties: { [BADGE]: { rich_text: want ? [{ type: 'text', text: { content: want } }] : [] } } }, key);
     log.log(`자료 표시: ${plain(prop.rich_text) || '(없음)'} → ${want || '(없음)'}`);

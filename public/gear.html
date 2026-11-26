@@ -28,7 +28,8 @@ td{padding:3px 5px;border-bottom:1px solid #eef1f5;vertical-align:middle}
 th.q,td.q{width:58px;text-align:center}
 th.c,td.c{width:40px;text-align:center}
 th.n,td.n{width:28%}
-td.name{word-break:break-all;font-weight:600}
+td.name{word-break:keep-all;overflow-wrap:break-word;font-weight:600}
+.stk .nw{white-space:nowrap}
 input.qty{width:100%;text-align:center;padding:5px 2px;border:1px solid #e3c96a;border-radius:6px;background:#fff8d6;font-weight:700}
 input.qty.has{background:#ffe680;border-color:#c9a400}
 input.note,input.kind{width:100%;padding:5px;border:1px solid #dfe5ec;border-radius:6px;background:#fff;font-size:12px}
@@ -459,11 +460,11 @@ tr.warn td{background:#fde2e1;color:#b42318;font-size:12px;font-weight:700;paddi
       if (a.stock === 1 && a.other > 0) { hint.textContent = '⛔ ' + a.uses.map((x) => x.t).join(', ') + ' 사용 중'; hint.className = 'stk none'; return; }
       if (a.boxStock != null) {   // LED: 판·박스
         const bl = a.boxAvail - (r.box || 0);
-        hint.textContent = `남음 판 ${Math.max(0, left)}/${a.stock} · 박스 ${Math.max(0, bl)}/${a.boxStock}`;
+        hint.textContent = ''; hint.append(el('span', 'nw', `남음 판 ${Math.max(0, left)}/${a.stock}`), ' · ', el('span', 'nw', `박스 ${Math.max(0, bl)}/${a.boxStock}`));
         hint.className = 'stk' + (left <= 0 || bl <= 0 ? ' none' : left <= Math.ceil(a.stock * 0.2) || bl <= Math.ceil(a.boxStock * 0.2) ? ' low' : '');
         return;
       }
-      hint.textContent = `남음 ${Math.max(0, left)} / 보유 ${a.stock}`;
+      hint.textContent = ''; hint.append(el('span', 'nw', `남음 ${Math.max(0, left)}`), ' / ', el('span', 'nw', `보유 ${a.stock}`));
       hint.className = 'stk' + (left <= 0 ? ' none' : left <= Math.ceil(a.stock * 0.2) ? ' low' : '');
     };
     hints.push(paintHint);
